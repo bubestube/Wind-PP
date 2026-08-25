@@ -2,8 +2,8 @@ name: Scrape Wind Data
 
 on:
   schedule:
-    - cron: '7,24,41 * * * *'  # Runs at :07, :27, :47 past every hour
-  workflow_dispatch:        # Enables manual trigger button
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
 
 jobs:
   scrape-and-commit:
