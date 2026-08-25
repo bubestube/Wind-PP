@@ -71,7 +71,7 @@ async def scrape_once():
         raw_text = extracted["rawText"]
 
         speed_match = re.search(r"Velocit(?:a|à|&agrave;)[^\d]*([\d]+[.,]?[\d]*)", raw_text, re.IGNORECASE)
-        gust_match = re.search(r"Raffica[^\d]*([\d]+[.,]?[\d]*)", raw_text, raw_text)
+        gust_match = re.search(r"Raffica[^\d]*([\d]+[.,]?[\d]*)", raw_text, re.IGNORECASE)
         temp_match = re.search(r"Temperatura[\s\S]*?([\-]?\d+[.,]?\d*)\s*(?:°|C|gradi)?", raw_text, re.IGNORECASE)
 
         speed = float(speed_match.group(1).replace(",", ".")) if speed_match else None
