@@ -2,6 +2,7 @@ import datetime
 import os
 import re
 import asyncio
+from zoneinfo import ZoneInfo  # Built-in timezone support in Python 3.9+
 import pandas as pd
 from playwright.async_api import async_playwright
 
@@ -15,6 +16,9 @@ COLUMNS = [
     "direzione_cardinal",
     "direzione_deg",
 ]
+
+# Timezone for Sardinia / Italy
+LOCAL_TZ = ZoneInfo("Europe/Rome")
 
 def deg_to_cardinal(deg):
     if deg is None:
@@ -87,8 +91,11 @@ async def scrape_once():
         direction_deg = extracted.get("windDir")
 
         if speed is not None:
+            # ✅ Uses exact local time for Porto Pollo (Rome/Zurich timezone)
+            local_now = datetime.datetime.now(LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
+            
             reading = {
-                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "timestamp": local_now,
                 "velocita_knots": speed,
                 "raffica_knots": gust,
                 "temperatura_c": temperature,
