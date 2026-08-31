@@ -94,7 +94,7 @@ if os.path.exists(CSV_FILE):
             row_heights=[0.45, 0.30, 0.25] if has_temp else [0.65, 0.35]
         )
 
-        # Subplot 1: Speed Line + Solid Bold Directional Pointers
+        # Subplot 1: Speed Line + Large Wide-Bodied Arrows
         fig.add_trace(go.Scatter(
             x=df_filtered["timestamp"], 
             y=df_filtered["velocita_knots"],
@@ -102,11 +102,11 @@ if os.path.exists(CSV_FILE):
             name="Velocità & Direction",
             line=dict(color="#0284c7", width=2),
             marker=dict(
-                symbol="triangle-up",          # ⬅️ Solid triangular arrowhead
+                symbol="arrow-up",
                 angle=df_filtered["arrow_angle"],
-                size=16,                       # ⬅️ Increased size
-                color="#facc15",               # ⬅️ High-visibility electric yellow/gold
-                line=dict(color="#0f172a", width=1.5)  # ⬅️ Bold dark outline for contrast
+                size=18,                       # ⬅️ Large footprint
+                color="#f59e0b",               # ⬅️ Vivid Amber
+                line=dict(color="#1e1b4b", width=1.8)  # ⬅️ Thick border
             ),
             customdata=df_filtered[["direzione_cardinal", "direzione_deg"]],
             hovertemplate="<b>Speed:</b> %{y:.2f} kts<br><b>Wind from:</b> %{customdata[0]} (%{customdata[1]}°)<extra></extra>"
