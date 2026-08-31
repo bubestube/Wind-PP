@@ -169,18 +169,26 @@ if os.path.exists(CSV_FILE):
             hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y}°)<br><b>Speed:</b> %{customdata[1]:.2f} kts<extra></extra>"
         ), row=2, col=1)
 
-        # Dynamic Arrow Step Calculation
+        # High-Frequency Adaptive Arrow Calculation
         deg_series = df_for_arrows["direzione_deg"].fillna(0)
         deg_diff = (deg_series.diff().fillna(0) + 180) % 360 - 180
-        avg_angular_volatility = deg_diff.abs().rolling(window=5, min_periods=1).mean()
+        avg_angular_volatility = deg_diff.abs().rolling(window=3, min_periods=1).mean()
 
-        base_step = max(1, len(df_for_arrows) // 35)
+        base_step = max(1, len(df_for_arrows) // 30)
         selected_indices = []
         i = 0
         while i < len(df_for_arrows):
             selected_indices.append(i)
             volatility = avg_angular_volatility.iloc[i]
-            step = int(base_step * 1.8) if volatility > 25 else base_step
+            
+            # Increase frequency as volatility increases
+            if volatility > 25:
+                step = 1  # Show every point
+            elif volatility > 15:
+                step = max(1, base_step // 2)
+            else:
+                step = base_step
+                
             i += max(1, step)
 
         df_sub = df_for_arrows.iloc[selected_indices]
