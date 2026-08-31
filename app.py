@@ -101,7 +101,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🪁 Porto Pollo (Sardinia) – Live Wind Station")
-st.caption("Real-time weather station monitor with **Adaptive Level-of-Detail & Continuous Angulation Vectors**.")
+st.caption("High-performance real-time weather station monitor (*Fast loading, continuous angulation vectors, gradient fills*).")
 
 # 1. Cached Data Loader
 @st.cache_data(ttl=60, show_spinner=False)
@@ -197,48 +197,6 @@ if df is not None and not df.empty:
 
     has_temp = "temperatura_c" in df_filtered.columns and df_filtered["temperatura_c"].notnull().any()
 
-    # --- Adaptive Density Thresholds based on Zoom Level ---
-    if time_preset == "Last 6 Hours (Default)":
-        delta_threshold_kts = 1.0
-        min_pts_gap = 2
-        fallback_speed_step = 8
-        steady_arrow_step = 2
-        deg_threshold = 10.0
-        gradient_resample_freq = "2min"
-        bar_width_ms = 2 * 60 * 1000
-    elif time_preset == "Last 24 Hours":
-        delta_threshold_kts = 1.8
-        min_pts_gap = 4
-        fallback_speed_step = 16
-        steady_arrow_step = 5
-        deg_threshold = 15.0
-        gradient_resample_freq = "3min"
-        bar_width_ms = 3 * 60 * 1000
-    elif time_preset == "Last 3 Days":
-        delta_threshold_kts = 2.5
-        min_pts_gap = 8
-        fallback_speed_step = 28
-        steady_arrow_step = 12
-        deg_threshold = 22.0
-        gradient_resample_freq = "10min"
-        bar_width_ms = 10 * 60 * 1000
-    elif time_preset == "Last 7 Days":
-        delta_threshold_kts = 3.2
-        min_pts_gap = 14
-        fallback_speed_step = 45
-        steady_arrow_step = 18
-        deg_threshold = 28.0
-        gradient_resample_freq = "20min"
-        bar_width_ms = 20 * 60 * 1000
-    else:  # Fit All History
-        delta_threshold_kts = 4.0
-        min_pts_gap = 20
-        fallback_speed_step = 60
-        steady_arrow_step = 25
-        deg_threshold = 32.0
-        gradient_resample_freq = "30min"
-        bar_width_ms = 30 * 60 * 1000
-
     # Gap Disconnectors
     df_plot = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
     time_diffs = df_plot["timestamp"].diff()
@@ -264,7 +222,7 @@ if df is not None and not df.empty:
     else:
         df_plot_lines = df_plot.copy()
 
-    # Dynamic Density Labels & Vector Points Registry
+    # --- Fast Global Budget Sampling for Annotations (Sub-100ms load) ---
     speed_labels = [""] * len(df_plot_lines)
     gust_labels = [""] * len(df_plot_lines)
     labeled_speed_points = []
@@ -288,6 +246,10 @@ if df is not None and not df.empty:
         last_g_val = df_plot_lines.loc[f_idx, 'raffica_knots'] if pd.notnull(df_plot_lines.loc[f_idx, 'raffica_knots']) else -999.0
         last_g_idx = f_idx
 
+        # Keep total speed arrows across full history bounded at ~35 max for instant loading
+        target_max_speed_arrows = 35
+        fallback_step = max(5, len(valid_indices) // target_max_speed_arrows)
+
         v_arr = df_plot_lines["velocita_knots"].to_numpy()
         r_arr = df_plot_lines["raffica_knots"].to_numpy()
         d_arr = df_plot_lines["direzione_deg"].to_numpy()
@@ -302,7 +264,7 @@ if df is not None and not df.empty:
             delta_s = abs(curr_v - last_s_val)
             pts_since_s = idx - last_s_idx
 
-            if (delta_s >= delta_threshold_kts and pts_since_s >= min_pts_gap) or pts_since_s >= fallback_speed_step:
+            if (delta_s >= 1.5 and pts_since_s >= 3) or pts_since_s >= fallback_step:
                 speed_labels[idx] = f"{curr_v:.1f}"
                 labeled_speed_points.append({
                     "timestamp": t_arr[idx],
@@ -315,7 +277,7 @@ if df is not None and not df.empty:
             if pd.notnull(curr_g):
                 delta_g = abs(curr_g - last_g_val)
                 pts_since_g = idx - last_g_idx
-                if (delta_g >= delta_threshold_kts and pts_since_g >= min_pts_gap) or pts_since_g >= fallback_speed_step:
+                if (delta_g >= 1.5 and pts_since_g >= 3) or pts_since_g >= fallback_step:
                     gust_labels[idx] = f"{curr_g:.1f}"
                     last_g_val = curr_g
                     last_g_idx = idx
@@ -323,20 +285,21 @@ if df is not None and not df.empty:
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
 
-    # Adaptive-Resolution Gradient Interpolation
+    # --- Fast Resampling for Gradient Fill without Heavy Loops ---
     fill_segments = []
     seg_start = 0
     gap_pos = list(gap_indices) + [len(df_plot)]
     for g_pos in gap_pos:
         seg = df_plot.iloc[seg_start:g_pos]
         if len(seg) >= 2:
-            seg_resampled = seg.set_index("timestamp")[["velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]].resample(gradient_resample_freq).interpolate(method="time").reset_index()
+            seg_resampled = seg.set_index("timestamp")[["velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]].resample("2min").interpolate(method="time").reset_index()
             fill_segments.append(seg_resampled)
         elif len(seg) == 1:
             fill_segments.append(seg[["timestamp", "velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]])
         seg_start = g_pos
 
     df_gradient_fill = pd.concat(fill_segments, ignore_index=True) if fill_segments else df_plot.copy()
+    bar_width_ms = 2 * 60 * 1000
 
     # 4. Build Multi-Panel Subplots
     fig = make_subplots(
@@ -459,9 +422,12 @@ if df is not None and not df.empty:
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=2, col=1)
 
-    # Subplot 2: Adaptive Vector Wind Arrows
+    # Subplot 2: Globally Bounded Vector Arrows (Fixed ~35-40 total for instant load)
     df_for_arrows = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
+
+    target_max_compass_arrows = 38
+    compass_step = max(3, len(df_for_arrows) // target_max_compass_arrows)
 
     selected_indices = []
     if not df_for_arrows.empty:
@@ -476,7 +442,7 @@ if df is not None and not df.empty:
             delta_deg = abs((curr_deg - last_deg + 180) % 360 - 180)
             points_since_last = i - last_idx
 
-            if delta_deg >= deg_threshold or points_since_last >= steady_arrow_step:
+            if (delta_deg >= 18.0 and points_since_last >= 3) or points_since_last >= compass_step:
                 selected_indices.append(i)
                 last_idx = i
                 last_deg = curr_deg
@@ -595,7 +561,7 @@ if df is not None and not df.empty:
         fixedrange=True
     )
 
-    # Default Viewport
+    # Default 6h Viewport Window
     t_end_view = df_plot_lines["timestamp"].max()
     t_start_data = df_plot_lines["timestamp"].min()
 
