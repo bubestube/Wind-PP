@@ -113,7 +113,7 @@ if os.path.exists(CSV_FILE):
         with c4:
             st.markdown(f"""<div class="wg-card">
                 <div class="wg-card-title">🌡️ Temperature</div>
-                <div class="wg-card-val" style="color: #e11d48;">
+                <div class="wg-card-val" style="color: #ca8a04;">
                     {f"{temp_val:.1f} °C" if pd.notnull(temp_val) else "N/A"}
                 </div>
             </div>""", unsafe_allow_html=True)
@@ -194,12 +194,12 @@ if os.path.exists(CSV_FILE):
             subplot_titles=(
                 "<b>Wind speed and gusts (knots)</b>",
                 "<b>Wind direction</b>",
-                "<b>Temperature (°C)</b>" if has_temp else None
+                "<b>Temperature (°C) – 🟡 Daytime (06-19h) | 🔵 Nighttime (19-06h)</b>" if has_temp else None
             ),
             row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
         )
 
-        # --- SUBPLOT 1: WIND SPEED & GUSTS (Windguru Highcharts Style) ---
+        # --- SUBPLOT 1: WIND SPEED & GUSTS ---
         # Gusts: Red / Orange points + subtle connecting dashed line
         fig.add_trace(go.Scatter(
             x=df_plot["timestamp"],
@@ -292,22 +292,40 @@ if os.path.exists(CSV_FILE):
                 opacity=0.9
             )
 
-        # --- SUBPLOT 3: TEMPERATURE STRIP ---
+        # --- SUBPLOT 3: TEMPERATURE STRIP (Yellow for Day, Dark Blue for Night) ---
         if has_temp:
+            is_day = df_plot["timestamp"].dt.hour.between(6, 18)
+            temp_day = df_plot["temperatura_c"].where(is_day, np.nan)
+            temp_night = df_plot["temperatura_c"].where(~is_day, np.nan)
+
+            # Daytime Trace (Warm Yellow / Gold)
             fig.add_trace(go.Scatter(
                 x=df_plot["timestamp"],
-                y=df_plot["temperatura_c"],
+                y=temp_day,
                 mode="lines+markers",
-                name="Temperature",
+                name="Temp (Day: 06-19h)",
                 connectgaps=False,
-                line=dict(color="#e11d48", width=2.0),
-                marker=dict(size=4, color="#be123c"),
-                hovertemplate="<b>Temp:</b> %{y:.1f} °C<extra></extra>"
+                line=dict(color="#eab308", width=2.2),
+                marker=dict(size=4, color="#eab308", line=dict(color="#ca8a04", width=1)),
+                hovertemplate="<b>Temp (Day):</b> %{y:.1f} °C<extra></extra>"
             ), row=3, col=1)
+
+            # Nighttime Trace (Dark Blue)
+            if not daytime_only:
+                fig.add_trace(go.Scatter(
+                    x=df_plot["timestamp"],
+                    y=temp_night,
+                    mode="lines+markers",
+                    name="Temp (Night: 19-06h)",
+                    connectgaps=False,
+                    line=dict(color="#1e3a8a", width=2.2),
+                    marker=dict(size=4, color="#1e3a8a", line=dict(color="#0f172a", width=1)),
+                    hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
+                ), row=3, col=1)
+
             fig.update_yaxes(title_text="°C", row=3, col=1, gridcolor="#e2e8f0", fixedrange=True)
 
         # --- WINDGURU VERTICAL DAY/NIGHT SHADING ---
-        # Add subtle gray vertical bands for nighttime spans (19:00 - 06:00)
         if not daytime_only and not df_plot.empty:
             t_min = df_plot["timestamp"].min()
             t_max = df_plot["timestamp"].max()
