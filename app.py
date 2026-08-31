@@ -101,9 +101,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🪁 Porto Pollo (Sardinia) – Live Wind Station")
-st.caption("Event-Driven Streamlit Slicing (*Instant 6h startup, dynamic streaming on viewport pan/zoom*).")
 
-# 1. Cached CSV Database Loader
+# 1. Fast Cached CSV Loader
 @st.cache_data(ttl=60, show_spinner=False)
 def load_all_records(csv_path):
     if not os.path.exists(csv_path):
@@ -127,7 +126,7 @@ if df_all is not None and not df_all.empty:
     t_global_max = df_all["timestamp"].max()
     t_global_min = df_all["timestamp"].min()
 
-    # 2. KPI Cards
+    # 2. Status KPI Cards
     speed_bg, speed_fg = get_wg_badge(latest['velocita_knots'])
     gust_bg, gust_fg = get_wg_badge(latest['raffica_knots'])
     temp_val = latest.get("temperatura_c")
@@ -171,59 +170,77 @@ if df_all is not None and not df_all.empty:
 
     st.write("")
 
-    # 3. Viewport Presets & Daytime Filter
-    col_preset, col_daytime, col_reset = st.columns([3, 1, 1])
-    with col_preset:
-        time_preset = st.radio(
-            "Initial Viewport Range:",
-            options=["Last 6 Hours (Default)", "Last 24 Hours", "Last 3 Days", "Last 7 Days", "Fit All History"],
+    # 3. Dynamic Timeline Navigation & Window Scrubber
+    if "window_end_time" not in st.session_state:
+        st.session_state.window_end_time = t_global_max.to_pydatetime()
+    if "window_span_hours" not in st.session_state:
+        st.session_state.window_span_hours = 6
+
+    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns([1, 1, 1.3, 1.2, 1, 1])
+    with ctrl_col1:
+        if st.button("◀ -1 Day"):
+            st.session_state.window_end_time = max(
+                (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime(),
+                st.session_state.window_end_time - datetime.timedelta(days=1)
+            )
+            st.rerun()
+    with ctrl_col2:
+        if st.button("◀ -6 Hours"):
+            st.session_state.window_end_time = max(
+                (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime(),
+                st.session_state.window_end_time - datetime.timedelta(hours=6)
+            )
+            st.rerun()
+    with ctrl_col3:
+        st.session_state.window_span_hours = st.selectbox(
+            "Window Width:",
+            options=[6, 12, 24, 72, 168],
             index=0,
-            horizontal=True,
-            key="range_preset"
+            format_func=lambda h: f"{h} Hours" if h < 24 else f"{h//24} Day{'s' if h > 24 else ''}"
         )
-    with col_daytime:
-        st.write("")
-        daytime_only = st.checkbox("☀️ Daytime Only (06:00 – 19:00)", value=False)
-    with col_reset:
-        st.write("")
-        if st.button("🔄 Reset View"):
-            st.session_state.pop("active_x_range", None)
+    with ctrl_col4:
+        daytime_only = st.checkbox("☀️ Daytime Only (06-19h)", value=False)
+    with ctrl_col5:
+        if st.button("+6 Hours ▶"):
+            st.session_state.window_end_time = min(
+                t_global_max.to_pydatetime(),
+                st.session_state.window_end_time + datetime.timedelta(hours=6)
+            )
+            st.rerun()
+    with ctrl_col6:
+        if st.button("🔴 Live Latest"):
+            st.session_state.window_end_time = t_global_max.to_pydatetime()
             st.rerun()
 
-    # Determine Base Viewport Window
-    if "active_x_range" in st.session_state and st.session_state.active_x_range:
-        try:
-            req_start = pd.to_datetime(st.session_state.active_x_range[0])
-            req_end = pd.to_datetime(st.session_state.active_x_range[1])
-        except Exception:
-            req_end = t_global_max
-            req_start = req_end - pd.Timedelta(hours=6)
-    else:
-        req_end = t_global_max
-        if time_preset == "Last 6 Hours (Default)":
-            req_start = req_end - pd.Timedelta(hours=6)
-        elif time_preset == "Last 24 Hours":
-            req_start = req_end - pd.Timedelta(hours=24)
-        elif time_preset == "Last 3 Days":
-            req_start = req_end - pd.Timedelta(days=3)
-        elif time_preset == "Last 7 Days":
-            req_start = req_end - pd.Timedelta(days=7)
-        else:
-            req_start = t_global_min
+    # High-precision Timeline Slider for Continuous Scrolling
+    min_slider = (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime()
+    max_slider = t_global_max.to_pydatetime()
 
-    # Add 45-minute lookaround buffer for seamless edge interpolation
-    buffer_start = max(t_global_min, req_start - pd.Timedelta(minutes=45))
-    buffer_end = min(t_global_max, req_end + pd.Timedelta(minutes=45))
+    if min_slider < max_slider:
+        selected_end = st.slider(
+            "Scroll Active Timeline Window:",
+            min_value=min_slider,
+            max_value=max_slider,
+            value=st.session_state.window_end_time,
+            format="DD.MM HH:mm",
+            step=datetime.timedelta(minutes=15)
+        )
+        st.session_state.window_end_time = selected_end
 
-    # Slice only what is exposed on the canvas
-    df_slice = df_all[(df_all["timestamp"] >= buffer_start) & (df_all["timestamp"] <= buffer_end)].copy()
+    v_end = pd.to_datetime(st.session_state.window_end_time)
+    v_start = v_end - pd.Timedelta(hours=st.session_state.window_span_hours)
+
+    # 4. SLICE ONLY THE REQUESTED TIME WINDOW ON DEMAND
+    df_slice = df_all[(df_all["timestamp"] >= v_start) & (df_all["timestamp"] <= v_end)].copy()
+
     if daytime_only:
         df_slice = df_slice[df_slice["timestamp"].dt.hour.between(6, 18)].copy()
 
     if df_slice.empty:
-        df_slice = df_all.tail(25).copy()
+        st.warning("No records in selected window.")
+        df_slice = df_all.tail(20).copy()
 
-    # Dynamic Calculations for Active Slice
+    # Calculations on the micro-slice only (<50-60 points)
     df_slice["velocita_bft"] = knots_to_bft(df_slice["velocita_knots"])
     df_slice["raffica_bft"] = knots_to_bft(df_slice["raffica_knots"])
     df_slice["velocita_plot_y"] = bft_to_stretched(df_slice["velocita_bft"])
@@ -316,7 +333,7 @@ if df_all is not None and not df_all.empty:
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
 
-    # Micro-slice fast interpolation
+    # Micro-slice fast gradient interpolation
     fill_segments = []
     seg_start = 0
     gap_pos = list(gap_indices) + [len(df_plot)]
@@ -332,14 +349,14 @@ if df_all is not None and not df_all.empty:
     df_gradient_fill = pd.concat(fill_segments, ignore_index=True) if fill_segments else df_plot.copy()
     bar_width_ms = 2 * 60 * 1000
 
-    # 4. Multi-Panel Subplots
+    # 5. Multi-Panel Subplots
     fig = make_subplots(
         rows=3 if has_temp else 2,
         cols=1,
         shared_xaxes=True,
         vertical_spacing=0.035,
         subplot_titles=(
-            f"<b>Wind speed and gusts (Stretched Beaufort Scale) – {req_start.strftime('%d.%m %H:%M')} to {req_end.strftime('%d.%m %H:%M')}</b>",
+            f"<b>Wind speed and gusts (Stretched Beaufort Scale) – {v_start.strftime('%d.%m %H:%M')} to {v_end.strftime('%d.%m %H:%M')}</b>",
             "<b>Wind direction</b>",
             "<b>Temperature (°C) – 🟡 Daytime (06-19h) | 🔵 Nighttime (19-06h)</b>" if has_temp else None
         ),
@@ -593,7 +610,7 @@ if df_all is not None and not df_all.empty:
     fig.update_xaxes(
         gridcolor="#e2e8f0",
         showgrid=True,
-        range=[req_start, req_end]
+        range=[v_start, v_end]
     )
 
     fig.update_layout(
@@ -616,29 +633,17 @@ if df_all is not None and not df_all.empty:
         margin=dict(l=35, r=20, t=50, b=30)
     )
 
-    # 5. Render with Streamlit Event Listener
-    chart_selection = st.plotly_chart(
+    # 6. Render Chart
+    st.plotly_chart(
         fig,
         use_container_width=True,
-        on_select="rerun",
-        selection_mode="box",
         config={
             "scrollZoom": True,
             "displayModeBar": True,
             "displaylogo": False,
-            "modeBarButtonsToRemove": ["lasso2d"]
+            "modeBarButtonsToRemove": ["lasso2d", "select2d"]
         }
     )
-
-    # Intercept Client-Side Pan/Zoom Range Changes
-    if chart_selection and "selection" in chart_selection and chart_selection["selection"]:
-        box_sel = chart_selection["selection"].get("box", [])
-        if box_sel and len(box_sel) > 0 and "x" in box_sel[0]:
-            new_x_range = box_sel[0]["x"]
-            if new_x_range and len(new_x_range) == 2:
-                if st.session_state.get("active_x_range") != new_x_range:
-                    st.session_state.active_x_range = new_x_range
-                    st.rerun()
 
     with st.expander("📋 View Data Log (Active Window)"):
         st.dataframe(
