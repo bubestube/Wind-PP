@@ -1,6 +1,7 @@
 import datetime
 import math
 import os
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -70,10 +71,7 @@ if os.path.exists(CSV_FILE):
             st.warning("No data points available for the selected filters. Showing all recent records.")
             df_filtered = df.copy()
 
-        # Calculate blowing direction angle (meteorological: from + 180 = blowing to)
-        df_filtered["arrow_angle"] = (df_filtered["direzione_deg"].fillna(0) + 180) % 360
-
-        # Summary Metrics
+        # Summary Metrics (Calculated before adding NaN gap markers)
         avg_speed = round(df_filtered["velocita_knots"].mean(), 1)
         max_gust = round(df_filtered["raffica_knots"].max(), 1)
         has_temp = "temperatura_c" in df_filtered.columns and df_filtered["temperatura_c"].notnull().any()
@@ -89,6 +87,31 @@ if os.path.exists(CSV_FILE):
             f"💨 Avg Speed: **{avg_speed} kts** | 💨 Max Gust: **{max_gust} kts**"
             f"{temp_stats} | 🧭 *Arrow Color: 🟢 **≥18 kts (Go)** | 🔴 **<18 kts (Light)**.*"
         )
+
+        # Vector Arrow Data Source (Keep clean copy before NaN insertion)
+        df_for_arrows = df_filtered.copy()
+        df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
+
+        # Insert NaN rows wherever time difference between records > 30 minutes to break lines
+        df_plot = df_filtered.copy().sort_values("timestamp")
+        time_diffs = df_plot["timestamp"].diff()
+        gap_indices = df_plot[time_diffs > pd.Timedelta(minutes=30)].index
+
+        if len(gap_indices) > 0:
+            nan_rows = []
+            for idx in gap_indices:
+                prev_time = df_plot.loc[df_plot.index[df_plot.index.get_loc(idx) - 1], "timestamp"]
+                # Insert a NaN row 1 minute after previous day's last reading
+                nan_row = pd.DataFrame([{
+                    "timestamp": prev_time + pd.Timedelta(minutes=1),
+                    "velocita_knots": np.nan,
+                    "raffica_knots": np.nan,
+                    "temperatura_c": np.nan,
+                    "direzione_deg": np.nan,
+                    "direzione_cardinal": None
+                }])
+                nan_rows.append(nan_row)
+            df_plot = pd.concat([df_plot] + nan_rows).sort_values("timestamp").reset_index(drop=True)
 
         # 3. Create 3 Subplots: Speed (Top), Direction (Middle), Temperature (Bottom)
         fig = make_subplots(
@@ -106,20 +129,22 @@ if os.path.exists(CSV_FILE):
 
         # Subplot 1: Wind Speed & Gusts
         fig.add_trace(go.Scatter(
-            x=df_filtered["timestamp"], 
-            y=df_filtered["velocita_knots"],
+            x=df_plot["timestamp"], 
+            y=df_plot["velocita_knots"],
             mode="lines+markers", 
             name="Velocità",
+            connectgaps=False,  # Prevents lines from crossing the overnight gap
             line=dict(color="#0284c7", width=2.5),
             marker=dict(size=4),
             hovertemplate="<b>Speed:</b> %{y:.2f} kts<extra></extra>"
         ), row=1, col=1)
 
         fig.add_trace(go.Scatter(
-            x=df_filtered["timestamp"], 
-            y=df_filtered["raffica_knots"],
+            x=df_plot["timestamp"], 
+            y=df_plot["raffica_knots"],
             mode="lines+markers", 
             name="Raffica",
+            connectgaps=False,
             line=dict(color="#f97316", width=2, dash="dot"),
             marker=dict(symbol="circle", size=4),
             hovertemplate="<b>Gust:</b> %{y:.2f} kts<extra></extra>"
@@ -127,19 +152,20 @@ if os.path.exists(CSV_FILE):
 
         # Subplot 2: Direction Trace
         fig.add_trace(go.Scatter(
-            x=df_filtered["timestamp"], 
-            y=df_filtered["direzione_deg"],
+            x=df_plot["timestamp"], 
+            y=df_plot["direzione_deg"],
             mode="markers+lines", 
             name="Direction (°)",
+            connectgaps=False,
             marker=dict(color="#64748b", size=5),
             line=dict(color="#94a3b8", dash="dot", width=1),
-            customdata=df_filtered[["direzione_cardinal", "velocita_knots"]],
+            customdata=df_plot[["direzione_cardinal", "velocita_knots"]],
             hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y}°)<br><b>Speed:</b> %{customdata[1]:.2f} kts<extra></extra>"
         ), row=2, col=1)
 
         # Slim Vector Arrows in Subplot 2
-        step = max(1, len(df_filtered) // 35)
-        df_sub = df_filtered.iloc[::step]
+        step = max(1, len(df_for_arrows) // 35)
+        df_sub = df_for_arrows.iloc[::step]
 
         arrow_length_px = 52
 
@@ -177,10 +203,11 @@ if os.path.exists(CSV_FILE):
         # Subplot 3: Temperature (Bottom)
         if has_temp:
             fig.add_trace(go.Scatter(
-                x=df_filtered["timestamp"], 
-                y=df_filtered["temperatura_c"],
+                x=df_plot["timestamp"], 
+                y=df_plot["temperatura_c"],
                 mode="lines+markers", 
                 name="Temperatura",
+                connectgaps=False,
                 line=dict(color="#ef4444", width=2),
                 marker=dict(size=4),
                 hovertemplate="<b>Temp:</b> %{y:.1f} °C<extra></extra>"
