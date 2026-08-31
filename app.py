@@ -16,7 +16,7 @@ st.set_page_config(
 CSV_FILE = "porto_pollo_wind_history.csv"
 BFT_EXP = 1.55
 
-# --- Vectorized Helpers ---
+# --- Vectorized Calculations ---
 def knots_to_bft(knots):
     if isinstance(knots, pd.Series):
         s = pd.to_numeric(knots, errors="coerce").clip(lower=0)
@@ -40,6 +40,27 @@ def deg_to_wind_arrow(deg):
     arrows = ["↓", "↙", "←", "↖", "↑", "↗", "→", "↘"]
     idx = int(((float(deg) % 360) + 22.5) // 45) % 8
     return arrows[idx]
+
+# Continuous Beaufort Color Scale for Area Fills (0 to 8+ Bft)
+WIND_COLORSCALE_GUST = [
+    [0.00, "rgba(255, 255, 255, 0.25)"],  # 0-1 Bft: Calm / Light
+    [0.22, "rgba(56, 189, 248, 0.30)"],   # 2-3 Bft: Light/Gentle Breeze
+    [0.40, "rgba(37, 99, 235, 0.35)"],    # 4 Bft: Moderate Breeze
+    [0.55, "rgba(34, 197, 94, 0.40)"],    # 5 Bft: Fresh Breeze
+    [0.70, "rgba(234, 179, 8, 0.45)"],    # 6 Bft: Strong Breeze
+    [0.85, "rgba(168, 85, 247, 0.50)"],   # 7 Bft: Near Gale
+    [1.00, "rgba(239, 68, 68, 0.55)"]     # 8+ Bft: Gale / Storm
+]
+
+WIND_COLORSCALE_SPEED = [
+    [0.00, "rgba(255, 255, 255, 0.50)"],
+    [0.22, "rgba(56, 189, 248, 0.55)"],
+    [0.40, "rgba(37, 99, 235, 0.60)"],
+    [0.55, "rgba(34, 197, 94, 0.65)"],
+    [0.70, "rgba(234, 179, 8, 0.70)"],
+    [0.85, "rgba(168, 85, 247, 0.75)"],
+    [1.00, "rgba(239, 68, 68, 0.80)"]
+]
 
 def get_wg_badge(val):
     if pd.isna(val):
@@ -88,11 +109,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🪁 Porto Pollo (Sardinia) – Live Wind Station")
-st.caption("Defaulting to **Last 6 Hours** (*Scroll mouse wheel or drag horizontally to pan seamlessly through full history*).")
+st.caption("Gradient-shaded Beaufort monitor (*Default 6h view with infinite backward scrolling*).")
 
 # 1. Cached Data Loader
 @st.cache_data(ttl=60, show_spinner=False)
-def load_and_prepare_data(csv_path):
+def load_all_records(csv_path):
     if not os.path.exists(csv_path):
         return None
     df = pd.read_csv(csv_path, on_bad_lines="skip")
@@ -111,7 +132,7 @@ def load_and_prepare_data(csv_path):
     df["arrow_angle"] = (df["direzione_deg"].fillna(0) + 180) % 360
     return df
 
-df = load_and_prepare_data(CSV_FILE)
+df = load_all_records(CSV_FILE)
 
 if df is not None and not df.empty:
     latest = df.iloc[-1]
@@ -161,7 +182,7 @@ if df is not None and not df.empty:
 
     st.write("")
 
-    # 3. Viewport Selection Controls
+    # 3. Viewport Presets & Daytime Filter
     col_preset, col_daytime = st.columns([3, 1])
     with col_preset:
         time_preset = st.radio(
@@ -209,7 +230,7 @@ if df is not None and not df.empty:
     else:
         df_plot_lines = df_plot.copy()
 
-    # 4. Ultra-Fast In-Trace Dynamic Labels (No heavy layout annotations)
+    # Dynamic Labels & Wind Direction Vectors
     speed_labels = [""] * len(df_plot_lines)
     gust_labels = [""] * len(df_plot_lines)
 
@@ -257,7 +278,23 @@ if df is not None and not df.empty:
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
 
-    # 5. Build Chart (With all points present for full timeline exploration)
+    # --- Smooth Gradient Resampling across Full Timeline ---
+    fill_segments = []
+    seg_start = 0
+    gap_pos = list(gap_indices) + [len(df_plot)]
+    for g_pos in gap_pos:
+        seg = df_plot.iloc[seg_start:g_pos]
+        if len(seg) >= 2:
+            seg_resampled = seg.set_index("timestamp")[["velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]].resample("2min").interpolate(method="time").reset_index()
+            fill_segments.append(seg_resampled)
+        elif len(seg) == 1:
+            fill_segments.append(seg[["timestamp", "velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]])
+        seg_start = g_pos
+
+    df_gradient_fill = pd.concat(fill_segments, ignore_index=True) if fill_segments else df_plot.copy()
+    bar_width_ms = 2 * 60 * 1000  # 2 minute gradient bar resolution
+
+    # 4. Build Multi-Panel Subplots
     fig = make_subplots(
         rows=3 if has_temp else 2,
         cols=1,
@@ -271,30 +308,38 @@ if df is not None and not df.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # Subplot 1: Gust Shaded Area
-    fig.add_trace(go.Scatter(
-        x=df_plot_lines["timestamp"],
-        y=df_plot_lines["raffica_plot_y"],
-        mode="lines",
-        fill="tozeroy",
-        fillcolor="rgba(239, 68, 68, 0.12)",
-        line=dict(width=0),
+    # Subplot 1: Gust Gradient Fill Area
+    fig.add_trace(go.Bar(
+        x=df_gradient_fill["timestamp"],
+        y=df_gradient_fill["raffica_plot_y"],
+        marker=dict(
+            color=df_gradient_fill["raffica_bft"],
+            colorscale=WIND_COLORSCALE_GUST,
+            cmin=0,
+            cmax=8,
+            line=dict(width=0)
+        ),
+        width=bar_width_ms,
         hoverinfo="skip",
         showlegend=False,
-        connectgaps=False
+        name="Gust Gradient Fill"
     ), row=1, col=1)
 
-    # Subplot 1: Sustained Speed Shaded Area
-    fig.add_trace(go.Scatter(
-        x=df_plot_lines["timestamp"],
-        y=df_plot_lines["velocita_plot_y"],
-        mode="lines",
-        fill="tozeroy",
-        fillcolor="rgba(56, 189, 248, 0.25)",
-        line=dict(width=0),
+    # Subplot 1: Sustained Speed Gradient Fill Area
+    fig.add_trace(go.Bar(
+        x=df_gradient_fill["timestamp"],
+        y=df_gradient_fill["velocita_plot_y"],
+        marker=dict(
+            color=df_gradient_fill["velocita_bft"],
+            colorscale=WIND_COLORSCALE_SPEED,
+            cmin=0,
+            cmax=8,
+            line=dict(width=0)
+        ),
+        width=bar_width_ms,
         hoverinfo="skip",
         showlegend=False,
-        connectgaps=False
+        name="Speed Gradient Fill"
     ), row=1, col=1)
 
     # Subplot 1: Gust Trace
@@ -313,7 +358,7 @@ if df is not None and not df.empty:
         hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=1, col=1)
 
-    # Subplot 1: Speed Trace with Number and Directed Arrow Below
+    # Subplot 1: Sustained Speed Trace with Number & Direction Arrow Below
     fig.add_trace(go.Scatter(
         x=df_plot_lines["timestamp"],
         y=df_plot_lines["velocita_plot_y"],
@@ -422,7 +467,7 @@ if df is not None and not df.empty:
         fixedrange=True
     )
 
-    # 6. Set Initial Viewport to 6 Hours, while all previous records are ready for scrolling
+    # 5. Default 6h Initial Viewport Window (All records remain present for smooth backward scrolling)
     t_end_view = df_plot_lines["timestamp"].max()
     t_start_data = df_plot_lines["timestamp"].min()
 
@@ -447,6 +492,8 @@ if df is not None and not df.empty:
         height=780 if has_temp else 600,
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
+        bargap=0,
+        barmode="overlay",
         font=dict(color="#1e293b", family="Arial, sans-serif"),
         dragmode="pan",
         hovermode="x unified",
@@ -461,7 +508,7 @@ if df is not None and not df.empty:
         margin=dict(l=35, r=20, t=50, b=30)
     )
 
-    # 7. Render Plotly Chart
+    # 6. Render Chart
     st.plotly_chart(
         fig,
         use_container_width=True,
@@ -473,7 +520,7 @@ if df is not None and not df.empty:
         }
     )
 
-    with st.expander("📋 View Data Log"):
+    with st.expander("📋 View Full Data Log"):
         st.dataframe(
             df_filtered.sort_values("timestamp", ascending=False),
             use_container_width=True
