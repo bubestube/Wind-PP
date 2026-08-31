@@ -167,7 +167,7 @@ if os.path.exists(CSV_FILE):
 
         st.write("")
 
-        # 2. Time Window Controls & Dynamic Zoom Settings
+        # 2. Time Window Controls
         col_filter, col_daytime = st.columns([3, 1])
         with col_filter:
             time_range = st.radio(
@@ -183,29 +183,14 @@ if os.path.exists(CSV_FILE):
         now = df["timestamp"].max()
         if time_range == "Last 6 Hours":
             df_filtered = df[df["timestamp"] >= now - pd.Timedelta(hours=6)].copy()
-            delta_threshold_kts = 1.0
-            max_speed_labels = 35
-            max_compass_arrows = 30
         elif time_range == "Last 24 Hours":
             df_filtered = df[df["timestamp"] >= now - pd.Timedelta(hours=24)].copy()
-            delta_threshold_kts = 1.5
-            max_speed_labels = 30
-            max_compass_arrows = 28
         elif time_range == "Last 3 Days":
             df_filtered = df[df["timestamp"] >= now - pd.Timedelta(days=3)].copy()
-            delta_threshold_kts = 2.0
-            max_speed_labels = 25
-            max_compass_arrows = 25
         elif time_range == "Last 7 Days":
             df_filtered = df[df["timestamp"] >= now - pd.Timedelta(days=7)].copy()
-            delta_threshold_kts = 2.5
-            max_speed_labels = 20
-            max_compass_arrows = 20
         else:
             df_filtered = df.copy()
-            delta_threshold_kts = 3.0
-            max_speed_labels = 20
-            max_compass_arrows = 20
 
         if daytime_only:
             df_filtered = df_filtered[df_filtered["timestamp"].dt.hour.between(6, 18)].copy()
@@ -251,7 +236,7 @@ if os.path.exists(CSV_FILE):
         else:
             df_plot_lines = df_plot.copy()
 
-        # --- Dynamic Text Labels & Arrow Record with Visual Capping ---
+        # --- Evenly Distributed Dynamic Text Labels & Arrow Record (No hard cutoff) ---
         speed_labels = [""] * len(df_plot_lines)
         gust_labels = [""] * len(df_plot_lines)
         labeled_speed_points = []
@@ -275,7 +260,9 @@ if os.path.exists(CSV_FILE):
             last_gust_val = df_plot_lines.loc[f_idx, 'raffica_knots'] if pd.notnull(df_plot_lines.loc[f_idx, 'raffica_knots']) else -999.0
             last_gust_idx = f_idx
 
-            fallback_step = max(5, len(valid_indices) // max_speed_labels)
+            # Spacing adapts smoothly based on total records
+            min_pts_gap = 3 if len(valid_indices) < 200 else (5 if len(valid_indices) < 600 else 8)
+            fallback_step = max(min_pts_gap * 2, len(valid_indices) // 35)
 
             for idx in valid_indices[1:]:
                 curr_val = df_plot_lines.loc[idx, "velocita_knots"]
@@ -285,23 +272,22 @@ if os.path.exists(CSV_FILE):
                 delta_kts = abs(curr_val - last_speed_val)
                 pts_since = idx - last_speed_idx
 
-                # Condition: Significant shift or fallback step, respecting view cap
-                if (delta_kts >= delta_threshold_kts and pts_since >= 4) or pts_since >= fallback_step:
-                    if len(labeled_speed_points) < max_speed_labels:
-                        speed_labels[idx] = f"{curr_val:.1f}"
-                        labeled_speed_points.append({
-                            "timestamp": df_plot_lines.loc[idx, 'timestamp'],
-                            "velocita_plot_y": df_plot_lines.loc[idx, 'velocita_plot_y'],
-                            "direzione_deg": curr_deg
-                        })
-                        last_speed_val = curr_val
-                        last_speed_idx = idx
+                # Condition: >= 1.0 kt change (with a small index gap) or fallback step
+                if (delta_kts >= 1.0 and pts_since >= min_pts_gap) or pts_since >= fallback_step:
+                    speed_labels[idx] = f"{curr_val:.1f}"
+                    labeled_speed_points.append({
+                        "timestamp": df_plot_lines.loc[idx, 'timestamp'],
+                        "velocita_plot_y": df_plot_lines.loc[idx, 'velocita_plot_y'],
+                        "direzione_deg": curr_deg
+                    })
+                    last_speed_val = curr_val
+                    last_speed_idx = idx
 
                 # Gust labels
                 if pd.notnull(curr_gust):
                     delta_gust = abs(curr_gust - last_gust_val)
                     pts_since_g = idx - last_gust_idx
-                    if (delta_gust >= delta_threshold_kts and pts_since_g >= 4) or pts_since_g >= fallback_step:
+                    if (delta_gust >= 1.0 and pts_since_g >= min_pts_gap) or pts_since_g >= fallback_step:
                         gust_labels[idx] = f"{curr_gust:.1f}"
                         last_gust_val = curr_gust
                         last_gust_idx = idx
@@ -338,7 +324,7 @@ if os.path.exists(CSV_FILE):
             row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
         )
 
-        bar_width_ms = 60 * 1000  # 1 minute resolution for continuous color transitions
+        bar_width_ms = 60 * 1000  # 1 minute
 
         # --- SUBPLOT 1: STRETCHED BEAUFORT GRADIENT FILLS + BLACK LINES + LABELS ---
         # 1. Gust Color Fill Area
@@ -450,7 +436,7 @@ if os.path.exists(CSV_FILE):
         ), row=2, col=1)
 
         # Adaptive Arrow Placement for Subplot 2
-        compass_step = max(4, len(df_for_arrows) // max_compass_arrows)
+        steady_step = max(4, len(df_for_arrows) // 30)
         selected_indices = []
         if not df_for_arrows.empty:
             selected_indices.append(0)
@@ -464,11 +450,10 @@ if os.path.exists(CSV_FILE):
                 delta_deg = abs((curr_deg - last_deg + 180) % 360 - 180)
                 points_since_last = i - last_idx
 
-                if delta_deg > 20.0 or points_since_last >= compass_step:
-                    if len(selected_indices) < max_compass_arrows:
-                        selected_indices.append(i)
-                        last_idx = i
-                        last_deg = curr_deg
+                if delta_deg > 20.0 or points_since_last >= steady_step:
+                    selected_indices.append(i)
+                    last_idx = i
+                    last_deg = curr_deg
 
         df_sub = df_for_arrows.iloc[selected_indices]
         arrow_length_px = 44
