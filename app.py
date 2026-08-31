@@ -350,7 +350,7 @@ if os.path.exists(CSV_FILE):
             name="Speed Gradient Fill"
         ), row=1, col=1)
 
-        # 3. Gust Trace in Stretched Scale with Dynamic Gust Labels (Dotted Black Line)
+        # 3. Gust Trace in Stretched Scale with Gust Labels ABOVE (top center)
         fig.add_trace(go.Scatter(
             x=df_plot_lines["timestamp"],
             y=df_plot_lines["raffica_plot_y"],
@@ -366,12 +366,12 @@ if os.path.exists(CSV_FILE):
             hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
         ), row=1, col=1)
 
-        # 4. Sustained Wind Speed Line with Dynamic Speed Labels (Solid Black Line)
+        # 4. Sustained Wind Speed Line with Speed Labels BELOW (bottom center)
         fig.add_trace(go.Scatter(
             x=df_plot_lines["timestamp"],
             y=df_plot_lines["velocita_plot_y"],
             text=df_plot_lines["speed_label"],
-            textposition="top center",
+            textposition="bottom center",  # ⬅️ Positioned below the data point
             textfont=dict(family="Arial, sans-serif", size=10.0, color="#0f172a"),
             customdata=np.stack((df_plot_lines["velocita_bft"], df_plot_lines["velocita_knots"]), axis=-1),
             mode="lines+markers+text",
