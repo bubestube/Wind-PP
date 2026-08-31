@@ -105,7 +105,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🪁 Porto Pollo (Sardinia) – Live Wind Station")
-st.caption("Real-time weather station monitor with **Stretched Beaufort Scale & Dynamic Speed Labels** (*Scroll wheel to zoom, drag to pan horizontally*).")
+st.caption("Real-time weather station monitor with **Stretched Beaufort Scale & Dynamic Speed + Gust Labels** (*Scroll wheel to zoom, drag to pan horizontally*).")
 
 if os.path.exists(CSV_FILE):
     df = pd.read_csv(CSV_FILE, on_bad_lines="skip")
@@ -236,30 +236,53 @@ if os.path.exists(CSV_FILE):
         else:
             df_plot_lines = df_plot.copy()
 
-        # --- Dynamic Text Label Calculation (Placed only after >= 1.0 knot change) ---
-        text_labels = [""] * len(df_plot_lines)
+        # --- Dynamic Text Labels for Sustained Speed (>= 1.0 knot shift) ---
+        speed_labels = [""] * len(df_plot_lines)
         if not df_plot_lines.empty:
             valid_speed_indices = df_plot_lines[df_plot_lines["velocita_knots"].notnull()].index.tolist()
             if valid_speed_indices:
                 first_i = valid_speed_indices[0]
-                text_labels[first_i] = f"{df_plot_lines.loc[first_i, 'velocita_knots']:.1f}"
-                last_labeled_val = df_plot_lines.loc[first_i, "velocita_knots"]
-                last_labeled_idx = first_i
+                speed_labels[first_i] = f"{df_plot_lines.loc[first_i, 'velocita_knots']:.1f}"
+                last_speed_val = df_plot_lines.loc[first_i, "velocita_knots"]
+                last_speed_idx = first_i
                 
-                steady_label_fallback = max(4, len(valid_speed_indices) // 20)
+                fallback_step = max(4, len(valid_speed_indices) // 20)
 
                 for idx in valid_speed_indices[1:]:
                     curr_val = df_plot_lines.loc[idx, "velocita_knots"]
-                    delta_kts = abs(curr_val - last_labeled_val)
-                    pts_since = idx - last_labeled_idx
+                    delta_kts = abs(curr_val - last_speed_val)
+                    pts_since = idx - last_speed_idx
 
-                    # Condition: Wind speed delta >= 1.0 kts OR fallback spacing reached
-                    if delta_kts >= 1.0 or pts_since >= steady_label_fallback:
-                        text_labels[idx] = f"{curr_val:.1f}"
-                        last_labeled_val = curr_val
-                        last_labeled_idx = idx
+                    if delta_kts >= 1.0 or pts_since >= fallback_step:
+                        speed_labels[idx] = f"{curr_val:.1f}"
+                        last_speed_val = curr_val
+                        last_speed_idx = idx
 
-        df_plot_lines["speed_label"] = text_labels
+        df_plot_lines["speed_label"] = speed_labels
+
+        # --- Dynamic Text Labels for Gust Speed (>= 1.0 knot shift) ---
+        gust_labels = [""] * len(df_plot_lines)
+        if not df_plot_lines.empty:
+            valid_gust_indices = df_plot_lines[df_plot_lines["raffica_knots"].notnull()].index.tolist()
+            if valid_gust_indices:
+                first_gi = valid_gust_indices[0]
+                gust_labels[first_gi] = f"{df_plot_lines.loc[first_gi, 'raffica_knots']:.1f}"
+                last_gust_val = df_plot_lines.loc[first_gi, "raffica_knots"]
+                last_gust_idx = first_gi
+                
+                fallback_step = max(4, len(valid_gust_indices) // 20)
+
+                for idx in valid_gust_indices[1:]:
+                    curr_val = df_plot_lines.loc[idx, "raffica_knots"]
+                    delta_kts = abs(curr_val - last_gust_val)
+                    pts_since = idx - last_gust_idx
+
+                    if delta_kts >= 1.0 or pts_since >= fallback_step:
+                        gust_labels[idx] = f"{curr_val:.1f}"
+                        last_gust_val = curr_val
+                        last_gust_idx = idx
+
+        df_plot_lines["gust_label"] = gust_labels
 
         # High-Density Interpolation for Smooth Color Gradient Fill in Beaufort
         fill_segments = []
@@ -327,12 +350,15 @@ if os.path.exists(CSV_FILE):
             name="Speed Gradient Fill"
         ), row=1, col=1)
 
-        # 3. Gust Trace in Stretched Scale (Dotted Black Outline)
+        # 3. Gust Trace in Stretched Scale with Dynamic Gust Labels (Dotted Black Line)
         fig.add_trace(go.Scatter(
             x=df_plot_lines["timestamp"],
             y=df_plot_lines["raffica_plot_y"],
+            text=df_plot_lines["gust_label"],
+            textposition="top center",
+            textfont=dict(family="Arial, sans-serif", size=10.0, color="#b91c1c"),
             customdata=np.stack((df_plot_lines["raffica_bft"], df_plot_lines["raffica_knots"]), axis=-1),
-            mode="lines+markers",
+            mode="lines+markers+text",
             name="Gust (Raffica)",
             connectgaps=False,
             line=dict(color="#0f172a", width=1.6, dash="dot"),
@@ -340,13 +366,13 @@ if os.path.exists(CSV_FILE):
             hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
         ), row=1, col=1)
 
-        # 4. Sustained Wind Speed Line with Dynamic Numeric Labels (>= 1.0 knot shift)
+        # 4. Sustained Wind Speed Line with Dynamic Speed Labels (Solid Black Line)
         fig.add_trace(go.Scatter(
             x=df_plot_lines["timestamp"],
             y=df_plot_lines["velocita_plot_y"],
             text=df_plot_lines["speed_label"],
             textposition="top center",
-            textfont=dict(family="Arial, sans-serif", size=10.5, color="#0f172a"),
+            textfont=dict(family="Arial, sans-serif", size=10.0, color="#0f172a"),
             customdata=np.stack((df_plot_lines["velocita_bft"], df_plot_lines["velocita_knots"]), axis=-1),
             mode="lines+markers+text",
             name="Wind Speed (Avg)",
@@ -487,7 +513,7 @@ if os.path.exists(CSV_FILE):
         ]
 
         max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
-        top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.12)
+        top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
 
         fig.update_yaxes(
             title_text="<b>Beaufort Force (Stretched)</b>",
