@@ -92,7 +92,7 @@ if os.path.exists(CSV_FILE):
                 "Wind Direction (Degrees & Vectors)",
                 "Temperature (°C)" if has_temp else None
             ),
-            row_heights=[0.42, 0.36, 0.22] if has_temp else [0.60, 0.40]
+            row_heights=[0.40, 0.40, 0.20] if has_temp else [0.55, 0.45]
         )
 
         # Subplot 1: Wind Speed & Gusts
@@ -128,11 +128,11 @@ if os.path.exists(CSV_FILE):
             hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y}°)<br><b>Speed:</b> %{customdata[1]:.2f} kts<extra></extra>"
         ), row=2, col=1)
 
-        # Long Stem Vector Arrows in Subplot 2 with Conditional Colors
-        step = max(1, len(df_filtered) // 40)
+        # Longer Stem Vector Arrows in Subplot 2 (Degrees)
+        step = max(1, len(df_filtered) // 35)
         df_sub = df_filtered.iloc[::step]
 
-        arrow_length_px = 35  # Length of stem + arrowhead
+        arrow_length_px = 52  # ⬅️ Increased stem length
 
         for _, row_data in df_sub.iterrows():
             angle_deg = row_data["arrow_angle"]
@@ -159,9 +159,9 @@ if os.path.exists(CSV_FILE):
                 ayref="pixel",
                 showarrow=True,
                 arrowhead=2,
-                arrowsize=1.5,
-                arrowwidth=2.5,
-                arrowcolor=arrow_color,  # ⬅️ Dynamic color applied here
+                arrowsize=1.6,
+                arrowwidth=2.8,  # Slightly thicker stem to match the longer length
+                arrowcolor=arrow_color,
                 opacity=0.95
             )
 
@@ -182,14 +182,14 @@ if os.path.exists(CSV_FILE):
         fig.update_yaxes(title_text="Knots", row=1, col=1)
         fig.update_yaxes(
             title_text="Degrees",
-            range=[-25, 385],
+            range=[-40, 400],  # Expanded padding for longer arrows
             tickvals=[0, 90, 180, 270, 360],
             ticktext=["N (0°)", "E (90°)", "S (180°)", "W (270°)", "N (360°)"],
             row=2, col=1
         )
 
         fig.update_layout(
-            height=750 if has_temp else 580,
+            height=780 if has_temp else 600,
             template="plotly_white",
             hovermode="x unified",
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
