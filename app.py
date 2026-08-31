@@ -1,4 +1,5 @@
 import datetime
+import math
 import os
 import pandas as pd
 import plotly.graph_objects as go
@@ -61,7 +62,7 @@ if os.path.exists(CSV_FILE):
         if df_filtered.empty:
             df_filtered = df.copy()
 
-        # Calculate blowing direction angle for Plotly arrows (meteorological: from + 180 = blowing to)
+        # Calculate blowing direction angle (meteorological: from + 180 = blowing to)
         df_filtered["arrow_angle"] = (df_filtered["direzione_deg"].fillna(0) + 180) % 360
 
         # Summary Metrics
@@ -77,7 +78,7 @@ if os.path.exists(CSV_FILE):
         st.caption(
             f"Showing **{len(df_filtered)} datapoints** ({time_range}) | "
             f"💨 Avg Speed: **{avg_speed} kts** | 💨 Max Gust: **{max_gust} kts**"
-            f"{temp_stats} | ⬆️ *Arrows point in the direction the wind is blowing.*"
+            f"{temp_stats} | 🧭 *Arrows in the direction plot show the wind vector.*"
         )
 
         # 3. Create 3 Subplots: Speed (Top), Direction (Middle), Temperature (Bottom)
@@ -87,94 +88,77 @@ if os.path.exists(CSV_FILE):
             shared_xaxes=True,
             vertical_spacing=0.08,
             subplot_titles=(
-                "Wind Speed & Gusts (Knots) with Wind Vectors",
-                "Wind Direction (Degrees & Cardinal)",
+                "Wind Speed & Gusts (Knots)",
+                "Wind Direction (Degrees & Vectors)",
                 "Temperature (°C)" if has_temp else None
             ),
-            row_heights=[0.45, 0.30, 0.25] if has_temp else [0.65, 0.35]
+            row_heights=[0.42, 0.36, 0.22] if has_temp else [0.60, 0.40]
         )
 
-        # 1. Subplot 1: Clean Speed & Gust Lines
+        # Subplot 1: Wind Speed & Gusts
         fig.add_trace(go.Scatter(
             x=df_filtered["timestamp"], 
             y=df_filtered["velocita_knots"],
             mode="lines+markers", 
             name="Velocità",
             line=dict(color="#0284c7", width=2.5),
-            marker=dict(size=5, color="#0284c7"),
-            customdata=df_filtered[["direzione_cardinal", "direzione_deg"]],
-            hovertemplate="<b>Speed:</b> %{y:.2f} kts<br><b>Wind from:</b> %{customdata[0]} (%{customdata[1]}°)<extra></extra>"
+            marker=dict(size=4),
+            hovertemplate="<b>Speed:</b> %{y:.2f} kts<extra></extra>"
         ), row=1, col=1)
 
         fig.add_trace(go.Scatter(
             x=df_filtered["timestamp"], 
             y=df_filtered["raffica_knots"],
             mode="lines+markers", 
-            name="Raffica (Gust)",
+            name="Raffica",
             line=dict(color="#f97316", width=2, dash="dot"),
             marker=dict(symbol="circle", size=4),
             hovertemplate="<b>Gust:</b> %{y:.2f} kts<extra></extra>"
         ), row=1, col=1)
 
-        # 2. Add True Vector Arrows (Stem + Arrowhead) via Annotations
-        import math
+        # Subplot 2: Direction Trace
+        fig.add_trace(go.Scatter(
+            x=df_filtered["timestamp"], 
+            y=df_filtered["direzione_deg"],
+            mode="markers+lines", 
+            name="Direction (°)",
+            marker=dict(color="#059669", size=6),
+            line=dict(color="#10b981", dash="dot", width=1),
+            customdata=df_filtered["direzione_cardinal"],
+            hovertemplate="<b>Direction:</b> %{customdata} (%{y}°)<extra></extra>"
+        ), row=2, col=1)
 
-        # Thin out points slightly if looking at long timeframes (e.g. >100 points) to avoid overcrowding
-        step = max(1, len(df_filtered) // 50)
+        # Long Stem Vector Arrows in Subplot 2 (Degrees)
+        step = max(1, len(df_filtered) // 40)
         df_sub = df_filtered.iloc[::step]
 
-        arrow_length_px = 22  # Length of the stem + arrowhead
+        arrow_length_px = 35  # Increased length for a prominent stem
 
         for _, row_data in df_sub.iterrows():
             angle_deg = row_data["arrow_angle"]
-            if pd.isna(angle_deg):
+            if pd.isna(angle_deg) or pd.isna(row_data["direzione_deg"]):
                 continue
             
-            # Convert angle to radians (0 deg = North/Up, 90 deg = East/Right)
             rad = math.radians(angle_deg)
-            # Vector displacement in pixels
             dx = arrow_length_px * math.sin(rad)
             dy = arrow_length_px * math.cos(rad)
 
             fig.add_annotation(
                 x=row_data["timestamp"],
-                y=row_data["velocita_knots"],
-                xref="x1",
-                yref="y1",
-                ax=-dx,           # Tail X offset
-                ay=dy,            # Tail Y offset (inverted for screen coords)
+                y=row_data["direzione_deg"],
+                xref="x2",        # References the second subplot (Direction)
+                yref="y2",
+                ax=-dx,           # Tail offset X
+                ay=dy,            # Tail offset Y
                 axref="pixel",
                 ayref="pixel",
                 showarrow=True,
-                arrowhead=2,      # 2 = Solid wide arrowhead
-                arrowsize=1.4,    # Size of the barb
-                arrowwidth=2.5,   # Thickness of the stem
-                arrowcolor="#e11d48",  # Bold crimson/red so it pops distinctly
+                arrowhead=2,      # Solid triangle head
+                arrowsize=1.5,    # Head size
+                arrowwidth=2.5,   # Stem thickness
+                arrowcolor="#dc2626",  # High-contrast bold red/crimson
                 opacity=0.9
             )
-
-        # Subplot 1: Gusts
-        fig.add_trace(go.Scatter(
-            x=df_filtered["timestamp"], 
-            y=df_filtered["raffica_knots"],
-            mode="lines+markers", 
-            name="Raffica (Gust)",
-            line=dict(color="#f97316", width=2, dash="dot"),
-            marker=dict(symbol="circle", size=4),
-            hovertemplate="<b>Gust:</b> %{y:.2f} kts<extra></extra>"
-        ), row=1, col=1)
-
-        # Subplot 2: Wind Direction Plot
-        fig.add_trace(go.Scatter(
-            x=df_filtered["timestamp"], 
-            y=df_filtered["direzione_deg"],
-            mode="markers+lines", 
-            name="Direction",
-            marker=dict(color="#10b981", size=6),
-            line=dict(color="#10b981", dash="dot", width=1),
-            customdata=df_filtered["direzione_cardinal"],
-            hovertemplate="<b>Direction:</b> %{customdata} (%{y}°)<extra></extra>"
-        ), row=2, col=1)
 
         # Subplot 3: Temperature (Bottom)
         if has_temp:
@@ -189,18 +173,18 @@ if os.path.exists(CSV_FILE):
             ), row=3, col=1)
             fig.update_yaxes(title_text="°C", row=3, col=1)
 
-        # Formatting Axes
+        # Axis Formatting
         fig.update_yaxes(title_text="Knots", row=1, col=1)
         fig.update_yaxes(
             title_text="Degrees",
-            range=[-10, 370],
+            range=[-25, 385],
             tickvals=[0, 90, 180, 270, 360],
             ticktext=["N (0°)", "E (90°)", "S (180°)", "W (270°)", "N (360°)"],
             row=2, col=1
         )
 
         fig.update_layout(
-            height=720 if has_temp else 550,
+            height=750 if has_temp else 580,
             template="plotly_white",
             hovermode="x unified",
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
@@ -209,7 +193,7 @@ if os.path.exists(CSV_FILE):
 
         st.plotly_chart(fig, use_container_width=True)
 
-        # Filtered Log
+        # Filtered Log Table
         with st.expander(f"📋 View Data Log ({time_range})"):
             st.dataframe(
                 df_filtered.sort_values("timestamp", ascending=False),
