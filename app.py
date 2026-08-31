@@ -128,11 +128,11 @@ if os.path.exists(CSV_FILE):
             hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y}°)<br><b>Speed:</b> %{customdata[1]:.2f} kts<extra></extra>"
         ), row=2, col=1)
 
-        # Longer Stem Vector Arrows in Subplot 2 (Degrees)
+        # Slimmer Arrow Corpus with Preserved Stem Length in Subplot 2
         step = max(1, len(df_filtered) // 35)
         df_sub = df_filtered.iloc[::step]
 
-        arrow_length_px = 52  # ⬅️ Increased stem length
+        arrow_length_px = 52  # Preserved stem length
 
         for _, row_data in df_sub.iterrows():
             angle_deg = row_data["arrow_angle"]
@@ -159,8 +159,8 @@ if os.path.exists(CSV_FILE):
                 ayref="pixel",
                 showarrow=True,
                 arrowhead=2,
-                arrowsize=1.6,
-                arrowwidth=2.8,  # Slightly thicker stem to match the longer length
+                arrowsize=1.1,   # Slimmer arrowhead
+                arrowwidth=2.0,  # Slimmer stem
                 arrowcolor=arrow_color,
                 opacity=0.95
             )
@@ -182,7 +182,7 @@ if os.path.exists(CSV_FILE):
         fig.update_yaxes(title_text="Knots", row=1, col=1)
         fig.update_yaxes(
             title_text="Degrees",
-            range=[-40, 400],  # Expanded padding for longer arrows
+            range=[-40, 400],
             tickvals=[0, 90, 180, 270, 360],
             ticktext=["N (0°)", "E (90°)", "S (180°)", "W (270°)", "N (360°)"],
             row=2, col=1
