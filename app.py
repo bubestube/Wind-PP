@@ -401,7 +401,7 @@ if df is not None and not df.empty:
             ayref="pixel",
             showarrow=True,
             arrowhead=2,
-            arrowsize=2,  # Compact, discrete arrow head
+            arrowsize=0.65,  # Compact, discrete arrow head
             arrowwidth=1.5,
             arrowcolor="#0f172a",
             opacity=0.95
@@ -469,7 +469,7 @@ if df is not None and not df.empty:
             ayref="pixel",
             showarrow=True,
             arrowhead=2,
-            arrowsize=0.75,  # Compact arrow head
+            arrowsize=2,  # Compact arrow head
             arrowwidth=1.6,
             arrowcolor=arrow_color,
             opacity=0.9
