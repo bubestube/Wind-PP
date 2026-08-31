@@ -8,64 +8,65 @@ from plotly.subplots import make_subplots
 import streamlit as st
 
 st.set_page_config(
-    page_title="Porto Pollo – Windguru Station Monitor",
+    page_title="Porto Pollo – Windguru Live Station",
     page_icon="🪁",
     layout="wide"
 )
 
 CSV_FILE = "porto_pollo_wind_history.csv"
 
-# Exact Windguru Beaufort Scale Knots Palette
-WINDGURU_BANDS = [
-    {"range": (0, 7),   "color": "rgba(226, 232, 240, 0.08)"},  # Very light
-    {"range": (7, 11),  "color": "rgba(147, 197, 253, 0.12)"},  # Light blue
-    {"range": (11, 15), "color": "rgba(59, 130, 246, 0.15)"},   # Blue
-    {"range": (15, 19), "color": "rgba(16, 185, 129, 0.18)"},   # Emerald (entry kite)
-    {"range": (19, 23), "color": "rgba(132, 204, 22, 0.22)"},   # Lime green
-    {"range": (23, 27), "color": "rgba(234, 179, 8, 0.25)"},    # Yellow
-    {"range": (27, 33), "color": "rgba(249, 115, 22, 0.28)"},   # Orange
-    {"range": (33, 40), "color": "rgba(239, 68, 68, 0.30)"},    # Red
-    {"range": (40, 60), "color": "rgba(168, 85, 247, 0.35)"},   # Purple/Storm
-]
-
-def get_windguru_color(knots):
-    if pd.isna(knots):
-        return "#94a3b8"
-    if knots < 7:
-        return "#e2e8f0"
-    elif knots < 11:
-        return "#93c5fd"
-    elif knots < 15:
-        return "#3b82f6"
-    elif knots < 19:
-        return "#10b981"
-    elif knots < 23:
-        return "#84cc16"
-    elif knots < 27:
-        return "#eab308"
-    elif knots < 33:
-        return "#f97316"
-    elif knots < 40:
-        return "#ef4444"
+# Windguru Metric Badge Helper
+def get_wg_badge(val, is_speed=True):
+    if pd.isna(val):
+        return "#94a3b8", "#ffffff"
+    if val < 11:
+        return "#93c5fd", "#0f172a"  # Light blue
+    elif val < 16:
+        return "#38bdf8", "#0f172a"  # Cyan
+    elif val < 21:
+        return "#4ade80", "#0f172a"  # Green
+    elif val < 26:
+        return "#facc15", "#0f172a"  # Yellow
+    elif val < 32:
+        return "#fb923c", "#ffffff"  # Orange
+    elif val < 40:
+        return "#f87171", "#ffffff"  # Red
     else:
-        return "#a855f7"
+        return "#c084fc", "#ffffff"  # Purple
 
-# Dark Windguru CSS Theme
+# Windguru Light Theme Typography
 st.markdown("""
     <style>
     .stApp {
-        background-color: #0b1120;
-        color: #f8fafc;
+        background-color: #f8fafc;
+        color: #1e293b;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
-    div[data-testid="stMetricValue"] {
-        font-family: monospace;
+    .wg-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 12px 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        text-align: center;
+    }
+    .wg-card-title {
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: #64748b;
+        margin-bottom: 4px;
+    }
+    .wg-card-val {
+        font-size: 1.6rem;
         font-weight: 700;
+        font-family: monospace;
     }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🪁 Porto Pollo – Windguru Live Station Monitor")
-st.caption("Live high-resolution station history. *Click & drag to pan horizontally, mouse wheel to zoom in/out.*")
+st.title("🪁 Porto Pollo (Sardinia) – Live Wind Station")
+st.caption("Real-time weather station monitor styled after **Windguru Live Station** (*Scroll wheel to zoom, drag to pan horizontally*).")
 
 if os.path.exists(CSV_FILE):
     df = pd.read_csv(CSV_FILE, on_bad_lines="skip")
@@ -82,18 +83,51 @@ if os.path.exists(CSV_FILE):
 
         latest = df.iloc[-1]
 
-        # 1. Top KPI Summary
-        kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
-        kpi1.metric("Current Speed", f"{latest['velocita_knots']} kts")
-        kpi2.metric("Current Gust", f"{latest['raffica_knots']} kts")
-        kpi3.metric("Direction", f"{latest['direzione_cardinal']} ({latest['direzione_deg']}°)")
+        # 1. Windguru Style Top Status Cards
+        speed_bg, speed_fg = get_wg_badge(latest['velocita_knots'])
+        gust_bg, gust_fg = get_wg_badge(latest['raffica_knots'])
         temp_val = latest.get("temperatura_c")
-        kpi4.metric("Temperature", f"{temp_val} °C" if pd.notnull(temp_val) else "N/A")
-        kpi5.metric("Last Scrape", latest["timestamp"].strftime("%H:%M (%d %b)"))
 
-        st.divider()
+        c1, c2, c3, c4, c5 = st.columns(5)
+        with c1:
+            st.markdown(f"""<div class="wg-card">
+                <div class="wg-card-title">💨 Wind Speed</div>
+                <div class="wg-card-val" style="color: {speed_fg}; background:{speed_bg}; border-radius:4px; padding:2px;">
+                    {latest['velocita_knots']:.1f} <span style="font-size:0.9rem;">kts</span>
+                </div>
+            </div>""", unsafe_allow_html=True)
+        with c2:
+            st.markdown(f"""<div class="wg-card">
+                <div class="wg-card-title">💨 Wind Gust</div>
+                <div class="wg-card-val" style="color: {gust_fg}; background:{gust_bg}; border-radius:4px; padding:2px;">
+                    {latest['raffica_knots']:.1f} <span style="font-size:0.9rem;">kts</span>
+                </div>
+            </div>""", unsafe_allow_html=True)
+        with c3:
+            st.markdown(f"""<div class="wg-card">
+                <div class="wg-card-title">🧭 Direction</div>
+                <div class="wg-card-val" style="color: #0f172a;">
+                    {latest['direzione_cardinal']} <span style="font-size:1.1rem; color:#64748b;">({latest['direzione_deg']:.0f}°)</span>
+                </div>
+            </div>""", unsafe_allow_html=True)
+        with c4:
+            st.markdown(f"""<div class="wg-card">
+                <div class="wg-card-title">🌡️ Temperature</div>
+                <div class="wg-card-val" style="color: #e11d48;">
+                    {f"{temp_val:.1f} °C" if pd.notnull(temp_val) else "N/A"}
+                </div>
+            </div>""", unsafe_allow_html=True)
+        with c5:
+            st.markdown(f"""<div class="wg-card">
+                <div class="wg-card-title">⏱️ Last Reading</div>
+                <div class="wg-card-val" style="font-size:1.1rem; padding-top:6px; color:#334155;">
+                    {latest['timestamp'].strftime('%d.%m. %H:%M')}
+                </div>
+            </div>""", unsafe_allow_html=True)
 
-        # 2. Time-Range & Daytime Filter Bar
+        st.write("")
+
+        # 2. Time Window Controls
         col_filter, col_daytime = st.columns([3, 1])
         with col_filter:
             time_range = st.radio(
@@ -125,15 +159,13 @@ if os.path.exists(CSV_FILE):
             st.warning("No data points available for selected filters.")
             df_filtered = df.copy()
 
-        avg_speed = round(df_filtered["velocita_knots"].mean(), 1)
-        max_gust = round(df_filtered["raffica_knots"].max(), 1)
         has_temp = "temperatura_c" in df_filtered.columns and df_filtered["temperatura_c"].notnull().any()
 
-        # Prepare Arrow Dataset
+        # Arrow data source
         df_for_arrows = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
         df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
-        # Gap Disconnectors for Outages & Overnight Spans
+        # Gap Disconnectors for Night and >30m Outages
         df_plot = df_filtered.copy().sort_values("timestamp")
         time_diffs = df_plot["timestamp"].diff()
         gap_indices = df_plot[time_diffs > pd.Timedelta(minutes=30)].index
@@ -153,85 +185,60 @@ if os.path.exists(CSV_FILE):
                 nan_rows.append(nan_row)
             df_plot = pd.concat([df_plot] + nan_rows).sort_values("timestamp").reset_index(drop=True)
 
-        # 3. Windguru Tri-Panel Subplot Layout
+        # 3. Build Windguru Multi-Panel Chart
         fig = make_subplots(
             rows=3 if has_temp else 2,
             cols=1,
             shared_xaxes=True,
-            vertical_spacing=0.04,
+            vertical_spacing=0.035,
             subplot_titles=(
-                "💨 Wind Speed & Gusts (Knots)",
-                "🧭 Wind Direction (Degrees & Vectors)",
-                "🌡️ Temperature (°C)" if has_temp else None
+                "<b>Wind speed and gusts (knots)</b>",
+                "<b>Wind direction</b>",
+                "<b>Temperature (°C)</b>" if has_temp else None
             ),
-            row_heights=[0.55, 0.30, 0.15] if has_temp else [0.65, 0.35]
+            row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
         )
 
-        # -------------------------------------------------------------
-        # SUBPLOT 1: WIND SPEED & GUSTS (With Shaded Beaufort Bands)
-        # -------------------------------------------------------------
-        # 1. Gust Trace (Dotted Orange with markers)
+        # --- SUBPLOT 1: WIND SPEED & GUSTS (Windguru Highcharts Style) ---
+        # Gusts: Red / Orange points + subtle connecting dashed line
         fig.add_trace(go.Scatter(
             x=df_plot["timestamp"],
             y=df_plot["raffica_knots"],
             mode="lines+markers",
             name="Gust (Raffica)",
             connectgaps=False,
-            line=dict(color="#f97316", width=1.8, dash="dot"),
-            marker=dict(symbol="circle", size=4, color="#ea580c"),
+            line=dict(color="rgba(220, 38, 38, 0.55)", width=1.5, dash="dot"),
+            marker=dict(symbol="circle", size=4.5, color="#dc2626"),
             hovertemplate="<b>Gust:</b> %{y:.1f} kts<extra></extra>"
         ), row=1, col=1)
 
-        # 2. Sustained Wind Speed (Cyan Area + Dynamic Beaufort-colored dots)
-        point_colors = [get_windguru_color(k) for k in df_plot["velocita_knots"]]
-
+        # Sustained Speed: Deep Windguru Blue Line + Soft Cyan Area Fill
         fig.add_trace(go.Scatter(
             x=df_plot["timestamp"],
             y=df_plot["velocita_knots"],
             mode="lines+markers",
-            name="Speed (Velocità)",
+            name="Wind Speed (Avg)",
             fill="tozeroy",
-            fillcolor="rgba(14, 165, 233, 0.18)",
+            fillcolor="rgba(2, 132, 199, 0.12)",
             connectgaps=False,
-            line=dict(color="#38bdf8", width=2.5),
-            marker=dict(
-                size=6,
-                color=point_colors,
-                line=dict(color="#0f172a", width=1)
-            ),
+            line=dict(color="#0284c7", width=2.2),
+            marker=dict(size=4, color="#0369a1"),
             hovertemplate="<b>Speed:</b> %{y:.1f} kts<extra></extra>"
         ), row=1, col=1)
 
-        # Draw Windguru Shaded Horizontal Speed Bands
-        max_observed_speed = max(35, df_plot["raffica_knots"].dropna().max() if not df_plot["raffica_knots"].dropna().empty else 35)
-        for band in WINDGURU_BANDS:
-            y0, y1 = band["range"]
-            if y0 <= max_observed_speed + 5:
-                fig.add_hrect(
-                    y0=y0,
-                    y1=min(y1, max_observed_speed + 5),
-                    fillcolor=band["color"],
-                    line_width=0,
-                    layer="below",
-                    row=1, col=1
-                )
-
-        # -------------------------------------------------------------
-        # SUBPLOT 2: DIRECTION DEGREES & COLOR-CODED ARROWS
-        # -------------------------------------------------------------
+        # --- SUBPLOT 2: DIRECTION (0-360° with clean grid & arrows) ---
         fig.add_trace(go.Scatter(
             x=df_plot["timestamp"],
             y=df_plot["direzione_deg"],
-            mode="lines+markers",
-            name="Direction (°)",
+            mode="markers",
+            name="Direction",
             connectgaps=False,
-            line=dict(color="#475569", width=1, dash="dot"),
-            marker=dict(symbol="circle", size=3, color="#94a3b8"),
+            marker=dict(symbol="circle", size=3.5, color="#64748b"),
             customdata=df_plot[["direzione_cardinal", "velocita_knots"]],
-            hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y}°)<br><b>Speed:</b> %{customdata[1]:.1f} kts<extra></extra>"
+            hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[1]:.1f} kts<extra></extra>"
         ), row=2, col=1)
 
-        # Dynamic Arrow Density (>20 deg shift = instant arrow; steady = spaced fallback)
+        # Adaptive Arrow Placement (>20 deg shift = instant; steady = spaced)
         steady_step = max(3, len(df_for_arrows) // 25)
         selected_indices = []
         if not df_for_arrows.empty:
@@ -252,7 +259,7 @@ if os.path.exists(CSV_FILE):
                     last_deg = curr_deg
 
         df_sub = df_for_arrows.iloc[selected_indices]
-        arrow_length_px = 48
+        arrow_length_px = 44
 
         for _, row_data in df_sub.iterrows():
             angle_deg = row_data["arrow_angle"]
@@ -261,7 +268,8 @@ if os.path.exists(CSV_FILE):
             if pd.isna(angle_deg) or pd.isna(row_data["direzione_deg"]):
                 continue
 
-            arrow_color = get_windguru_color(speed_val)
+            # Windguru color coding: Red if light (<18 kts), Green if good (>=18 kts)
+            arrow_color = "#16a34a" if (pd.notnull(speed_val) and speed_val >= 18.0) else "#dc2626"
 
             rad = math.radians(angle_deg)
             dx = arrow_length_px * math.sin(rad)
@@ -278,15 +286,13 @@ if os.path.exists(CSV_FILE):
                 ayref="pixel",
                 showarrow=True,
                 arrowhead=2,
-                arrowsize=1.1,
-                arrowwidth=2.2,
+                arrowsize=1.0,
+                arrowwidth=1.8,
                 arrowcolor=arrow_color,
-                opacity=0.95
+                opacity=0.9
             )
 
-        # -------------------------------------------------------------
-        # SUBPLOT 3: TEMPERATURE STRIP
-        # -------------------------------------------------------------
+        # --- SUBPLOT 3: TEMPERATURE STRIP ---
         if has_temp:
             fig.add_trace(go.Scatter(
                 x=df_plot["timestamp"],
@@ -294,42 +300,59 @@ if os.path.exists(CSV_FILE):
                 mode="lines+markers",
                 name="Temperature",
                 connectgaps=False,
-                line=dict(color="#f43f5e", width=2.0),
-                marker=dict(size=4, color="#fb7185"),
+                line=dict(color="#e11d48", width=2.0),
+                marker=dict(size=4, color="#be123c"),
                 hovertemplate="<b>Temp:</b> %{y:.1f} °C<extra></extra>"
             ), row=3, col=1)
-            fig.update_yaxes(title_text="°C", row=3, col=1, gridcolor="#334155", fixedrange=True)
+            fig.update_yaxes(title_text="°C", row=3, col=1, gridcolor="#e2e8f0", fixedrange=True)
 
-        # -------------------------------------------------------------
-        # AXES & STYLING CONFIGURATION
-        # -------------------------------------------------------------
+        # --- WINDGURU VERTICAL DAY/NIGHT SHADING ---
+        # Add subtle gray vertical bands for nighttime spans (19:00 - 06:00)
+        if not daytime_only and not df_plot.empty:
+            t_min = df_plot["timestamp"].min()
+            t_max = df_plot["timestamp"].max()
+            curr_day = t_min.floor("D")
+            while curr_day <= t_max:
+                night_start = curr_day + pd.Timedelta(hours=19)
+                night_end = curr_day + pd.Timedelta(days=1, hours=6)
+                if night_end >= t_min and night_start <= t_max:
+                    fig.add_vrect(
+                        x0=max(night_start, t_min),
+                        x1=min(night_end, t_max),
+                        fillcolor="rgba(15, 23, 42, 0.04)",
+                        layer="below",
+                        line_width=0
+                    )
+                curr_day += pd.Timedelta(days=1)
+
+        # --- WINDGURU GRID & AXES STYLING ---
         fig.update_yaxes(
             title_text="Knots",
             row=1, col=1,
-            gridcolor="#334155",
-            zerolinecolor="#475569",
+            gridcolor="#e2e8f0",
+            zerolinecolor="#cbd5e1",
             fixedrange=True
         )
         fig.update_yaxes(
             title_text="Direction",
-            range=[-40, 400],
+            range=[-35, 395],
             tickvals=[0, 90, 180, 270, 360],
             ticktext=["N (0°)", "E (90°)", "S (180°)", "W (270°)", "N (360°)"],
             row=2, col=1,
-            gridcolor="#334155",
+            gridcolor="#e2e8f0",
             fixedrange=True
         )
         fig.update_xaxes(
-            gridcolor="#334155",
+            gridcolor="#e2e8f0",
             showgrid=True
         )
 
         fig.update_layout(
-            height=820 if has_temp else 640,
-            paper_bgcolor="#0b1120",
-            plot_bgcolor="#1e293b",
-            font=dict(color="#e2e8f0"),
-            dragmode="pan",  # Horizontal click-and-drag pan enabled
+            height=780 if has_temp else 600,
+            paper_bgcolor="#ffffff",
+            plot_bgcolor="#ffffff",
+            font=dict(color="#1e293b", family="Arial, sans-serif"),
+            dragmode="pan",
             hovermode="x unified",
             legend=dict(
                 orientation="h",
@@ -337,12 +360,12 @@ if os.path.exists(CSV_FILE):
                 y=1.02,
                 xanchor="right",
                 x=1,
-                bgcolor="rgba(11, 17, 32, 0.85)"
+                bgcolor="rgba(255, 255, 255, 0.9)"
             ),
-            margin=dict(l=30, r=20, t=50, b=30)
+            margin=dict(l=35, r=20, t=50, b=30)
         )
 
-        # Render Chart with mouse wheel zoom
+        # 4. Render Chart with Zoom & Pan
         st.plotly_chart(
             fig,
             use_container_width=True,
@@ -355,7 +378,7 @@ if os.path.exists(CSV_FILE):
         )
 
         # Numerical Log
-        with st.expander(f"📋 View Numerical Log ({time_range})"):
+        with st.expander(f"📋 View Numerical Data Log ({time_range})"):
             st.dataframe(
                 df_filtered.sort_values("timestamp", ascending=False),
                 use_container_width=True
