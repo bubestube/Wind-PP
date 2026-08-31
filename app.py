@@ -159,7 +159,7 @@ if os.path.exists(CSV_FILE):
                 ayref="pixel",
                 showarrow=True,
                 arrowhead=2,
-                arrowsize=1.4,   # Slimmer arrowhead
+                arrowsize=1.6,   # Slimmer arrowhead
                 arrowwidth=2.0,  # Slimmer stem
                 arrowcolor=arrow_color,
                 opacity=0.95
