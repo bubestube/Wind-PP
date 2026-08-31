@@ -1,11 +1,13 @@
 import datetime
 import math
 import os
+import json
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
+import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title="Porto Pollo – Windguru Live Station",
@@ -33,15 +35,14 @@ def bft_to_stretched(bft_val):
         return np.nan
     return math.pow(max(0.0, float(bft_val)), BFT_EXP)
 
-# Continuous Beaufort Color Scale for Area Fills (0 to 8+ Bft)
 WIND_COLORSCALE_GUST = [
-    [0.00, "rgba(255, 255, 255, 0.25)"],  # 0-1 Bft: Calm / Light
-    [0.22, "rgba(56, 189, 248, 0.30)"],   # 2-3 Bft: Light/Gentle Breeze
-    [0.40, "rgba(37, 99, 235, 0.35)"],    # 4 Bft: Moderate Breeze
-    [0.55, "rgba(34, 197, 94, 0.40)"],    # 5 Bft: Fresh Breeze
-    [0.70, "rgba(234, 179, 8, 0.45)"],    # 6 Bft: Strong Breeze
-    [0.85, "rgba(168, 85, 247, 0.50)"],   # 7 Bft: Near Gale
-    [1.00, "rgba(239, 68, 68, 0.55)"]     # 8+ Bft: Gale / Storm
+    [0.00, "rgba(255, 255, 255, 0.25)"],
+    [0.22, "rgba(56, 189, 248, 0.30)"],
+    [0.40, "rgba(37, 99, 235, 0.35)"],
+    [0.55, "rgba(34, 197, 94, 0.40)"],
+    [0.70, "rgba(234, 179, 8, 0.45)"],
+    [0.85, "rgba(168, 85, 247, 0.50)"],
+    [1.00, "rgba(239, 68, 68, 0.55)"]
 ]
 
 WIND_COLORSCALE_SPEED = [
@@ -101,8 +102,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🪁 Porto Pollo (Sardinia) – Live Wind Station")
+st.caption("Scroll/Drag-Aware Lazy Loader (*Drag or scroll on chart to fetch historical chunks*).")
 
-# 1. Fast Cached CSV Loader
+# 1. Cached Data Loader
 @st.cache_data(ttl=60, show_spinner=False)
 def load_all_records(csv_path):
     if not os.path.exists(csv_path):
@@ -126,7 +128,7 @@ if df_all is not None and not df_all.empty:
     t_global_max = df_all["timestamp"].max()
     t_global_min = df_all["timestamp"].min()
 
-    # 2. Status KPI Cards
+    # 2. KPI Cards
     speed_bg, speed_fg = get_wg_badge(latest['velocita_knots'])
     gust_bg, gust_fg = get_wg_badge(latest['raffica_knots'])
     temp_val = latest.get("temperatura_c")
@@ -170,77 +172,57 @@ if df_all is not None and not df_all.empty:
 
     st.write("")
 
-    # 3. Dynamic Timeline Navigation & Window Scrubber
-    if "window_end_time" not in st.session_state:
-        st.session_state.window_end_time = t_global_max.to_pydatetime()
-    if "window_span_hours" not in st.session_state:
-        st.session_state.window_span_hours = 6
-
-    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns([1, 1, 1.3, 1.2, 1, 1])
-    with ctrl_col1:
-        if st.button("◀ -1 Day"):
-            st.session_state.window_end_time = max(
-                (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime(),
-                st.session_state.window_end_time - datetime.timedelta(days=1)
-            )
-            st.rerun()
-    with ctrl_col2:
-        if st.button("◀ -6 Hours"):
-            st.session_state.window_end_time = max(
-                (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime(),
-                st.session_state.window_end_time - datetime.timedelta(hours=6)
-            )
-            st.rerun()
-    with ctrl_col3:
-        st.session_state.window_span_hours = st.selectbox(
-            "Window Width:",
-            options=[6, 12, 24, 72, 168],
+    # 3. Viewport Selection & Quick Buttons
+    col_preset, col_daytime, col_live = st.columns([3, 1, 1])
+    with col_preset:
+        preset_choice = st.radio(
+            "Quick Viewport Preset:",
+            options=["Last 6 Hours (Default)", "Last 24 Hours", "Last 3 Days", "Last 7 Days", "Fit All History"],
             index=0,
-            format_func=lambda h: f"{h} Hours" if h < 24 else f"{h//24} Day{'s' if h > 24 else ''}"
+            horizontal=True
         )
-    with ctrl_col4:
-        daytime_only = st.checkbox("☀️ Daytime Only (06-19h)", value=False)
-    with ctrl_col5:
-        if st.button("+6 Hours ▶"):
-            st.session_state.window_end_time = min(
-                t_global_max.to_pydatetime(),
-                st.session_state.window_end_time + datetime.timedelta(hours=6)
-            )
-            st.rerun()
-    with ctrl_col6:
-        if st.button("🔴 Live Latest"):
-            st.session_state.window_end_time = t_global_max.to_pydatetime()
+    with col_daytime:
+        st.write("")
+        daytime_only = st.checkbox("☀️ Daytime (06-19h)", value=False)
+    with col_live:
+        st.write("")
+        if st.button("🔴 Jump to Live"):
+            st.query_params.clear()
             st.rerun()
 
-    # High-precision Timeline Slider for Continuous Scrolling
-    min_slider = (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime()
-    max_slider = t_global_max.to_pydatetime()
+    # Read active viewport boundaries from query parameters (populated dynamically by JavaScript on pan/zoom)
+    qp = st.query_params
+    if "x_start" in qp and "x_end" in qp:
+        try:
+            v_start = pd.to_datetime(qp["x_start"])
+            v_end = pd.to_datetime(qp["x_end"])
+        except Exception:
+            v_end = t_global_max
+            v_start = v_end - pd.Timedelta(hours=6)
+    else:
+        v_end = t_global_max
+        if preset_choice == "Last 6 Hours (Default)":
+            v_start = v_end - pd.Timedelta(hours=6)
+        elif preset_choice == "Last 24 Hours":
+            v_start = v_end - pd.Timedelta(hours=24)
+        elif preset_choice == "Last 3 Days":
+            v_start = v_end - pd.Timedelta(days=3)
+        elif preset_choice == "Last 7 Days":
+            v_start = v_end - pd.Timedelta(days=7)
+        else:
+            v_start = t_global_min
 
-    if min_slider < max_slider:
-        selected_end = st.slider(
-            "Scroll Active Timeline Window:",
-            min_value=min_slider,
-            max_value=max_slider,
-            value=st.session_state.window_end_time,
-            format="DD.MM HH:mm",
-            step=datetime.timedelta(minutes=15)
-        )
-        st.session_state.window_end_time = selected_end
+    # Slice strictly the active view plus a 30-minute buffer for continuous line endings
+    pad_start = max(t_global_min, v_start - pd.Timedelta(minutes=30))
+    pad_end = min(t_global_max, v_end + pd.Timedelta(minutes=30))
 
-    v_end = pd.to_datetime(st.session_state.window_end_time)
-    v_start = v_end - pd.Timedelta(hours=st.session_state.window_span_hours)
-
-    # 4. SLICE ONLY THE REQUESTED TIME WINDOW ON DEMAND
-    df_slice = df_all[(df_all["timestamp"] >= v_start) & (df_all["timestamp"] <= v_end)].copy()
-
+    df_slice = df_all[(df_all["timestamp"] >= pad_start) & (df_all["timestamp"] <= pad_end)].copy()
     if daytime_only:
         df_slice = df_slice[df_slice["timestamp"].dt.hour.between(6, 18)].copy()
 
     if df_slice.empty:
-        st.warning("No records in selected window.")
-        df_slice = df_all.tail(20).copy()
+        df_slice = df_all.tail(25).copy()
 
-    # Calculations on the micro-slice only (<50-60 points)
     df_slice["velocita_bft"] = knots_to_bft(df_slice["velocita_knots"])
     df_slice["raffica_bft"] = knots_to_bft(df_slice["raffica_knots"])
     df_slice["velocita_plot_y"] = bft_to_stretched(df_slice["velocita_bft"])
@@ -274,7 +256,7 @@ if df_all is not None and not df_all.empty:
     else:
         df_plot_lines = df_plot.copy()
 
-    # Precise Dynamic Labels & Arrow Anchors
+    # Dynamic Labels & Arrows on the current slice
     speed_labels = [""] * len(df_plot_lines)
     gust_labels = [""] * len(df_plot_lines)
     labeled_speed_points = []
@@ -333,7 +315,7 @@ if df_all is not None and not df_all.empty:
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
 
-    # Micro-slice fast gradient interpolation
+    # Fast Micro-Slice Resampling for Gradient Fill
     fill_segments = []
     seg_start = 0
     gap_pos = list(gap_indices) + [len(df_plot)]
@@ -349,7 +331,7 @@ if df_all is not None and not df_all.empty:
     df_gradient_fill = pd.concat(fill_segments, ignore_index=True) if fill_segments else df_plot.copy()
     bar_width_ms = 2 * 60 * 1000
 
-    # 5. Multi-Panel Subplots
+    # 4. Build Multi-Panel Subplots
     fig = make_subplots(
         rows=3 if has_temp else 2,
         cols=1,
@@ -429,7 +411,7 @@ if df_all is not None and not df_all.empty:
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
-    # Subplot 1: Exact Angulation Stemmed Vector Arrows
+    # Subplot 1: Stemmed Vector Arrows
     mini_arrow_len = 18
     for pt in labeled_speed_points:
         deg = pt["direzione_deg"]
@@ -470,7 +452,7 @@ if df_all is not None and not df_all.empty:
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=2, col=1)
 
-    # Subplot 2: Rotating Vector Arrows on Active Slice
+    # Subplot 2: Rotating Wind Arrows on Active Slice
     df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
@@ -613,8 +595,9 @@ if df_all is not None and not df_all.empty:
         range=[v_start, v_end]
     )
 
+    fig_height = 780 if has_temp else 600
     fig.update_layout(
-        height=780 if has_temp else 600,
+        height=fig_height,
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
         bargap=0,
@@ -633,17 +616,55 @@ if df_all is not None and not df_all.empty:
         margin=dict(l=35, r=20, t=50, b=30)
     )
 
-    # 6. Render Chart
-    st.plotly_chart(
-        fig,
-        use_container_width=True,
-        config={
-            "scrollZoom": True,
-            "displayModeBar": True,
-            "displaylogo": False,
-            "modeBarButtonsToRemove": ["lasso2d", "select2d"]
-        }
-    )
+    # --- 5. Custom JavaScript Relayout Bridge ---
+    # Serializes figure to JSON and injects a debounce listener on 'plotly_relayout'
+    fig_json = fig.to_json()
+    html_code = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+        <style>
+            html, body {{ margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }}
+            #chart {{ width: 100%; height: {fig_height}px; }}
+        </style>
+    </head>
+    <body>
+        <div id="chart"></div>
+        <script>
+            var plotData = {fig_json};
+            var chartDiv = document.getElementById('chart');
+
+            Plotly.newPlot(chartDiv, plotData.data, plotData.layout, {{
+                scrollZoom: true,
+                displayModeBar: true,
+                displaylogo: false,
+                modeBarButtonsToRemove: ['lasso2d', 'select2d']
+            }});
+
+            var debounceTimer = null;
+            chartDiv.on('plotly_relayout', function(eventdata) {{
+                var x0 = eventdata['xaxis.range[0]'] || (eventdata['xaxis.range'] && eventdata['xaxis.range'][0]);
+                var x1 = eventdata['xaxis.range[1]'] || (eventdata['xaxis.range'] && eventdata['xaxis.range'][1]);
+
+                if (x0 && x1) {{
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(function() {{
+                        var url = new URL(window.parent.location.href);
+                        url.searchParams.set('x_start', x0);
+                        url.searchParams.set('x_end', x1);
+                        window.parent.history.replaceState(null, '', url.toString());
+                        // Trigger Streamlit rerun with the new parameters
+                        window.parent.location.reload();
+                    }}, 450); // 450ms debounce allows smooth scrolling before fetching
+                }}
+            }});
+        </script>
+    </body>
+    </html>
+    """
+
+    components.html(html_code, height=fig_height + 10)
 
     with st.expander("📋 View Data Log (Active Window)"):
         st.dataframe(
