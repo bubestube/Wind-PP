@@ -230,7 +230,7 @@ if df is not None and not df.empty:
     else:
         df_plot_lines = df_plot.copy()
 
-    # Dynamic Labels & Wind Direction Vectors
+    # Dynamic Labels & Wind Direction Vectors (Bigger & Bolder Arrows)
     speed_labels = [""] * len(df_plot_lines)
     gust_labels = [""] * len(df_plot_lines)
 
@@ -242,7 +242,7 @@ if df is not None and not df.empty:
         v0 = df_plot_lines.loc[f_idx, 'velocita_knots']
         d0 = df_plot_lines.loc[f_idx, 'direzione_deg']
         a0 = deg_to_wind_arrow(d0)
-        speed_labels[f_idx] = f"{v0:.1f}<br><span style='font-size:11px;'>{a0}</span>"
+        speed_labels[f_idx] = f"{v0:.1f}<br><b style='font-size:15px; line-height:1.2;'>{a0}</b>"
 
         last_s_val = v0
         last_s_idx = f_idx
@@ -263,7 +263,8 @@ if df is not None and not df.empty:
 
             if (delta_s >= 1.0 and pts_since_s >= 2) or pts_since_s >= 8:
                 arrow = deg_to_wind_arrow(curr_d)
-                speed_labels[idx] = f"{curr_v:.1f}<br><span style='font-size:11px;'>{arrow}</span>"
+                # Bolder and larger (15px) direction arrow beneath wind speed
+                speed_labels[idx] = f"{curr_v:.1f}<br><b style='font-size:15px; line-height:1.2;'>{arrow}</b>"
                 last_s_val = curr_v
                 last_s_idx = idx
 
@@ -386,6 +387,62 @@ if df is not None and not df.empty:
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=2, col=1)
 
+    # --- SUBPLOT 2: Restored Rotating Vector Wind Arrows (Green >= 18kts, Red < 18kts) ---
+    df_for_arrows = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
+    df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
+
+    steady_step = max(3, len(df_for_arrows) // 40)
+    selected_indices = []
+    if not df_for_arrows.empty:
+        selected_indices.append(0)
+        last_idx = 0
+        last_deg = df_for_arrows.loc[0, "direzione_deg"]
+
+        for i in range(1, len(df_for_arrows)):
+            curr_deg = df_for_arrows.loc[i, "direzione_deg"]
+            if pd.isna(curr_deg):
+                continue
+            delta_deg = abs((curr_deg - last_deg + 180) % 360 - 180)
+            points_since_last = i - last_idx
+
+            if delta_deg > 20.0 or points_since_last >= steady_step:
+                selected_indices.append(i)
+                last_idx = i
+                last_deg = curr_deg
+
+    df_sub = df_for_arrows.iloc[selected_indices]
+    arrow_length_px = 44
+
+    for _, row_data in df_sub.iterrows():
+        angle_deg = row_data["arrow_angle"]
+        speed_val = row_data["velocita_knots"]
+
+        if pd.isna(angle_deg) or pd.isna(row_data["direzione_deg"]):
+            continue
+
+        arrow_color = "#16a34a" if (pd.notnull(speed_val) and speed_val >= 18.0) else "#dc2626"
+
+        rad = math.radians(angle_deg)
+        dx = arrow_length_px * math.sin(rad)
+        dy = arrow_length_px * math.cos(rad)
+
+        fig.add_annotation(
+            x=row_data["timestamp"],
+            y=row_data["direzione_deg"],
+            xref="x2",
+            yref="y2",
+            ax=-dx,
+            ay=dy,
+            axref="pixel",
+            ayref="pixel",
+            showarrow=True,
+            arrowhead=2,
+            arrowsize=1.0,
+            arrowwidth=1.8,
+            arrowcolor=arrow_color,
+            opacity=0.9
+        )
+
     # Subplot 3: Temperature
     if has_temp:
         is_day = df_plot_lines["timestamp"].dt.hour.between(6, 18)
@@ -467,7 +524,7 @@ if df is not None and not df.empty:
         fixedrange=True
     )
 
-    # 5. Default 6h Initial Viewport Window (All records remain present for smooth backward scrolling)
+    # 5. Default 6h Initial Viewport Window
     t_end_view = df_plot_lines["timestamp"].max()
     t_start_data = df_plot_lines["timestamp"].min()
 
