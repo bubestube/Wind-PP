@@ -377,8 +377,8 @@ if df is not None and not df.empty:
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
-    # Subplot 1: Exact Angulation Stemmed Vector Arrows (Increased Stem Length: 28px, Compact Arrow Head: 0.55)
-    mini_arrow_len = 28
+    # Subplot 1: Decreased stem length (18px) and increased arrow head size (1.35)
+    mini_arrow_len = 18
     for pt in labeled_speed_points:
         deg = pt["direzione_deg"]
         if pd.isna(deg) or pd.isna(pt["velocita_plot_y"]):
@@ -393,15 +393,15 @@ if df is not None and not df.empty:
             y=pt["velocita_plot_y"],
             xref="x1",
             yref="y1",
-            yshift=-28,
+            yshift=-24,
             ax=-dx,
             ay=dy,
             axref="pixel",
             ayref="pixel",
             showarrow=True,
-            arrowhead=3,
-            arrowsize=0.65,
-            arrowwidth=1.4,
+            arrowhead=2,
+            arrowsize=1.35,
+            arrowwidth=1.3,
             arrowcolor="#0f172a",
             opacity=0.95
         )
