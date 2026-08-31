@@ -101,7 +101,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🪁 Porto Pollo (Sardinia) – Live Wind Station")
-st.caption("Real-time weather station monitor with **Zoom-Adaptive Wind Vectors & Gradient Fill** (*Scroll wheel to zoom, drag to pan horizontally*).")
+st.caption("Real-time weather station monitor with **Continuous Angulation Wind Vectors & Gradient Fill** (*Scroll wheel to zoom, drag to pan horizontally*).")
 
 # 1. Cached Data Loader
 @st.cache_data(ttl=60, show_spinner=False)
@@ -377,7 +377,7 @@ if df is not None and not df.empty:
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
-    # Subplot 1: Stemmed Vector Arrows under Speed Numbers
+    # Subplot 1: Exact Angulation Stemmed Vector Arrows (Increased Stem Length: 28px, Compact Arrow Head: 0.55)
     mini_arrow_len = 28
     for pt in labeled_speed_points:
         deg = pt["direzione_deg"]
@@ -418,24 +418,11 @@ if df is not None and not df.empty:
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=2, col=1)
 
-    # Subplot 2: Zoom-Adaptive Rotating Vector Wind Arrows
+    # Subplot 2: Exact Rotating Vector Wind Arrows (Increased Stem Length: 60px, Compact Arrow Head: 0.65)
     df_for_arrows = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
-    # Dynamically increase arrow density when viewing smaller / zoomed-in windows
-    if time_preset == "Last 6 Hours (Default)":
-        steady_step = 2        # Highly frequent arrows when zoomed in
-        deg_threshold = 10.0   # Sensitive to smaller angle changes
-    elif time_preset == "Last 24 Hours":
-        steady_step = 4
-        deg_threshold = 15.0
-    elif time_preset == "Last 3 Days":
-        steady_step = max(6, len(df_for_arrows) // 50)
-        deg_threshold = 20.0
-    else:
-        steady_step = max(8, len(df_for_arrows) // 40)
-        deg_threshold = 25.0
-
+    steady_step = max(3, len(df_for_arrows) // 40)
     selected_indices = []
     if not df_for_arrows.empty:
         selected_indices.append(0)
@@ -449,7 +436,7 @@ if df is not None and not df.empty:
             delta_deg = abs((curr_deg - last_deg + 180) % 360 - 180)
             points_since_last = i - last_idx
 
-            if delta_deg >= deg_threshold or points_since_last >= steady_step:
+            if delta_deg > 20.0 or points_since_last >= steady_step:
                 selected_indices.append(i)
                 last_idx = i
                 last_deg = curr_deg
