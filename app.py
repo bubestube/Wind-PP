@@ -17,21 +17,22 @@ CSV_FILE = "porto_pollo_wind_history.csv"
 
 # Function to convert Knots to continuous Beaufort Scale Force
 def knots_to_bft(knots):
+    if isinstance(knots, pd.Series):
+        s = pd.to_numeric(knots, errors="coerce").clip(lower=0)
+        return np.power(s / 1.625, 2.0 / 3.0)
     if pd.isna(knots):
         return np.nan
-    # Empirical relation: v = 1.625 * Bft^(3/2) => Bft = (v / 1.625)^(2/3)
-    return np.power(np.maximum(0, knots) / 1.625, 2.0 / 3.0)
+    return np.power(max(0.0, float(knots)) / 1.625, 2.0 / 3.0)
 
 # Continuous Beaufort Color Scale for Area Fills (0 to 8+ Bft)
-# White -> Blue -> Green -> Yellow -> Purple -> Red
 WIND_COLORSCALE_GUST = [
     [0.00, "rgba(255, 255, 255, 0.25)"],  # 0-1 Bft: Calm / Light
     [0.22, "rgba(56, 189, 248, 0.30)"],   # 2-3 Bft: Light/Gentle Breeze
-    [0.40, "rgba(37, 99, 235, 0.35)"],    # 4 Bft: Moderate Breeze (11-16 kts)
-    [0.55, "rgba(34, 197, 94, 0.40)"],    # 5 Bft: Fresh Breeze (17-21 kts - Kiting zone)
-    [0.70, "rgba(234, 179, 8, 0.45)"],    # 6 Bft: Strong Breeze (22-27 kts)
-    [0.85, "rgba(168, 85, 247, 0.50)"],   # 7 Bft: Near Gale (28-33 kts)
-    [1.00, "rgba(239, 68, 68, 0.55)"]     # 8+ Bft: Gale / Storm (34+ kts)
+    [0.40, "rgba(37, 99, 235, 0.35)"],    # 4 Bft: Moderate Breeze
+    [0.55, "rgba(34, 197, 94, 0.40)"],    # 5 Bft: Fresh Breeze
+    [0.70, "rgba(234, 179, 8, 0.45)"],    # 6 Bft: Strong Breeze
+    [0.85, "rgba(168, 85, 247, 0.50)"],   # 7 Bft: Near Gale
+    [1.00, "rgba(239, 68, 68, 0.55)"]     # 8+ Bft: Gale / Storm
 ]
 
 WIND_COLORSCALE_SPEED = [
@@ -188,7 +189,7 @@ if os.path.exists(CSV_FILE):
 
         has_temp = "temperatura_c" in df_filtered.columns and df_filtered["temperatura_c"].notnull().any()
 
-        # Calculate Beaufort Scale Columns
+        # Vectorized Beaufort Calculations
         df_filtered["velocita_bft"] = knots_to_bft(df_filtered["velocita_knots"])
         df_filtered["raffica_bft"] = knots_to_bft(df_filtered["raffica_knots"])
 
@@ -426,7 +427,6 @@ if os.path.exists(CSV_FILE):
                 curr_day += pd.Timedelta(days=1)
 
         # --- BEAUFORT SCALE Y-AXIS FORMATTING ---
-        # Dynamically set top limit based on maximum gust observed
         max_bft = max(7.5, df_plot_lines["raffica_bft"].dropna().max() + 0.6 if not df_plot_lines["raffica_bft"].dropna().empty else 7.5)
 
         fig.update_yaxes(
