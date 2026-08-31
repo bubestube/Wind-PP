@@ -101,28 +101,31 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🪁 Porto Pollo (Sardinia) – Live Wind Station")
-st.caption("High-performance real-time weather station monitor (*Fast loading, continuous angulation vectors, gradient fills*).")
+st.caption("Real-time weather station monitor with **Continuous Angulation Wind Vectors & Gradient Fill** (*Scroll wheel to zoom, drag to pan horizontally*).")
 
 # 1. Cached Data Loader
 @st.cache_data(ttl=60, show_spinner=False)
 def load_all_records(csv_path):
     if not os.path.exists(csv_path):
         return None
-    df = pd.read_csv(csv_path, on_bad_lines="skip")
-    if df.empty or "timestamp" not in df.columns:
-        return None
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    df = df.drop_duplicates(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True)
-    df = df[df["timestamp"] >= "2026-08-27 13:11:00"].reset_index(drop=True)
-    if df.empty:
-        return None
+    try:
+        df = pd.read_csv(csv_path, on_bad_lines="skip")
+        if df.empty or "timestamp" not in df.columns:
+            return None
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df = df.drop_duplicates(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True)
+        df = df[df["timestamp"] >= "2026-08-27 13:11:00"].reset_index(drop=True)
+        if df.empty:
+            return None
 
-    df["velocita_bft"] = knots_to_bft(df["velocita_knots"])
-    df["raffica_bft"] = knots_to_bft(df["raffica_knots"])
-    df["velocita_plot_y"] = bft_to_stretched(df["velocita_bft"])
-    df["raffica_plot_y"] = bft_to_stretched(df["raffica_bft"])
-    df["arrow_angle"] = (df["direzione_deg"].fillna(0) + 180) % 360
-    return df
+        df["velocita_bft"] = knots_to_bft(df["velocita_knots"])
+        df["raffica_bft"] = knots_to_bft(df["raffica_knots"])
+        df["velocita_plot_y"] = bft_to_stretched(df["velocita_bft"])
+        df["raffica_plot_y"] = bft_to_stretched(df["raffica_bft"])
+        df["arrow_angle"] = (df["direzione_deg"].fillna(0) + 180) % 360
+        return df
+    except Exception:
+        return None
 
 df = load_all_records(CSV_FILE)
 
@@ -222,7 +225,7 @@ if df is not None and not df.empty:
     else:
         df_plot_lines = df_plot.copy()
 
-    # --- Fast Global Budget Sampling for Annotations (Sub-100ms load) ---
+    # Dynamic Labels & Precise Vector Points Registry
     speed_labels = [""] * len(df_plot_lines)
     gust_labels = [""] * len(df_plot_lines)
     labeled_speed_points = []
@@ -246,10 +249,6 @@ if df is not None and not df.empty:
         last_g_val = df_plot_lines.loc[f_idx, 'raffica_knots'] if pd.notnull(df_plot_lines.loc[f_idx, 'raffica_knots']) else -999.0
         last_g_idx = f_idx
 
-        # Keep total speed arrows across full history bounded at ~35 max for instant loading
-        target_max_speed_arrows = 35
-        fallback_step = max(5, len(valid_indices) // target_max_speed_arrows)
-
         v_arr = df_plot_lines["velocita_knots"].to_numpy()
         r_arr = df_plot_lines["raffica_knots"].to_numpy()
         d_arr = df_plot_lines["direzione_deg"].to_numpy()
@@ -264,7 +263,7 @@ if df is not None and not df.empty:
             delta_s = abs(curr_v - last_s_val)
             pts_since_s = idx - last_s_idx
 
-            if (delta_s >= 1.5 and pts_since_s >= 3) or pts_since_s >= fallback_step:
+            if (delta_s >= 1.0 and pts_since_s >= 2) or pts_since_s >= 8:
                 speed_labels[idx] = f"{curr_v:.1f}"
                 labeled_speed_points.append({
                     "timestamp": t_arr[idx],
@@ -277,7 +276,7 @@ if df is not None and not df.empty:
             if pd.notnull(curr_g):
                 delta_g = abs(curr_g - last_g_val)
                 pts_since_g = idx - last_g_idx
-                if (delta_g >= 1.5 and pts_since_g >= 3) or pts_since_g >= fallback_step:
+                if (delta_g >= 1.0 and pts_since_g >= 2) or pts_since_g >= 8:
                     gust_labels[idx] = f"{curr_g:.1f}"
                     last_g_val = curr_g
                     last_g_idx = idx
@@ -285,20 +284,8 @@ if df is not None and not df.empty:
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
 
-    # --- Fast Resampling for Gradient Fill without Heavy Loops ---
-    fill_segments = []
-    seg_start = 0
-    gap_pos = list(gap_indices) + [len(df_plot)]
-    for g_pos in gap_pos:
-        seg = df_plot.iloc[seg_start:g_pos]
-        if len(seg) >= 2:
-            seg_resampled = seg.set_index("timestamp")[["velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]].resample("2min").interpolate(method="time").reset_index()
-            fill_segments.append(seg_resampled)
-        elif len(seg) == 1:
-            fill_segments.append(seg[["timestamp", "velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]])
-        seg_start = g_pos
-
-    df_gradient_fill = pd.concat(fill_segments, ignore_index=True) if fill_segments else df_plot.copy()
+    # Robust & Fast Gradient Fill without fragile resample calls
+    df_gradient_fill = df_plot.copy()
     bar_width_ms = 2 * 60 * 1000
 
     # 4. Build Multi-Panel Subplots
@@ -422,13 +409,11 @@ if df is not None and not df.empty:
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=2, col=1)
 
-    # Subplot 2: Globally Bounded Vector Arrows (Fixed ~35-40 total for instant load)
+    # Subplot 2: Exact Rotating Vector Wind Arrows
     df_for_arrows = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
-    target_max_compass_arrows = 38
-    compass_step = max(3, len(df_for_arrows) // target_max_compass_arrows)
-
+    steady_step = max(3, len(df_for_arrows) // 40)
     selected_indices = []
     if not df_for_arrows.empty:
         selected_indices.append(0)
@@ -442,7 +427,7 @@ if df is not None and not df.empty:
             delta_deg = abs((curr_deg - last_deg + 180) % 360 - 180)
             points_since_last = i - last_idx
 
-            if (delta_deg >= 18.0 and points_since_last >= 3) or points_since_last >= compass_step:
+            if delta_deg > 20.0 or points_since_last >= steady_step:
                 selected_indices.append(i)
                 last_idx = i
                 last_deg = curr_deg
@@ -561,7 +546,7 @@ if df is not None and not df.empty:
         fixedrange=True
     )
 
-    # Default 6h Viewport Window
+    # Default 6h Initial Viewport Window
     t_end_view = df_plot_lines["timestamp"].max()
     t_start_data = df_plot_lines["timestamp"].min()
 
