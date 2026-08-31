@@ -377,8 +377,8 @@ if df is not None and not df.empty:
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
-    # Subplot 1: Exact Angulation Stemmed Vector Arrows under Speed Numbers
-    mini_arrow_len = 16
+    # Subplot 1: Exact Angulation Stemmed Vector Arrows (Increased Stem Length: 22px, Decreased Arrow Head: 0.65)
+    mini_arrow_len = 22  # Longer stem shaft
     for pt in labeled_speed_points:
         deg = pt["direzione_deg"]
         if pd.isna(deg) or pd.isna(pt["velocita_plot_y"]):
@@ -394,15 +394,15 @@ if df is not None and not df.empty:
             y=pt["velocita_plot_y"],
             xref="x1",
             yref="y1",
-            yshift=-23,
+            yshift=-25,
             ax=-dx,
             ay=dy,
             axref="pixel",
             ayref="pixel",
             showarrow=True,
             arrowhead=2,
-            arrowsize=1.0,
-            arrowwidth=1.8,
+            arrowsize=0.65,  # Compact, discrete arrow head
+            arrowwidth=1.5,
             arrowcolor="#0f172a",
             opacity=0.95
         )
@@ -419,7 +419,7 @@ if df is not None and not df.empty:
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=2, col=1)
 
-    # Subplot 2: Exact Rotating Vector Wind Arrows with Stem (Green >= 18kts, Red < 18kts)
+    # Subplot 2: Exact Rotating Vector Wind Arrows with Stem (Increased Stem: 50px, Smaller Head: 0.75)
     df_for_arrows = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
@@ -443,7 +443,7 @@ if df is not None and not df.empty:
                 last_deg = curr_deg
 
     df_sub = df_for_arrows.iloc[selected_indices]
-    arrow_length_px = 44
+    arrow_length_px = 50  # Longer stem shaft
 
     for _, row_data in df_sub.iterrows():
         angle_deg = row_data["arrow_angle"]
@@ -469,8 +469,8 @@ if df is not None and not df.empty:
             ayref="pixel",
             showarrow=True,
             arrowhead=2,
-            arrowsize=1.0,
-            arrowwidth=1.8,
+            arrowsize=0.75,  # Compact arrow head
+            arrowwidth=1.6,
             arrowcolor=arrow_color,
             opacity=0.9
         )
