@@ -16,7 +16,7 @@ st.set_page_config(
 CSV_FILE = "porto_pollo_wind_history.csv"
 BFT_EXP = 1.55
 
-# --- Fast Vectorized Helpers ---
+# --- Vectorized Calculations ---
 def knots_to_bft(knots):
     if isinstance(knots, pd.Series):
         s = pd.to_numeric(knots, errors="coerce").clip(lower=0)
@@ -33,15 +33,15 @@ def bft_to_stretched(bft_val):
         return np.nan
     return math.pow(max(0.0, float(bft_val)), BFT_EXP)
 
-# High-resolution Beaufort Color Scale for Area Fills (0 to 8+ Bft)
+# Beaufort Area Colorscale
 WIND_COLORSCALE_GUST = [
-    [0.00, "rgba(255, 255, 255, 0.25)"],  # 0-1 Bft: Calm / Light
-    [0.22, "rgba(56, 189, 248, 0.30)"],   # 2-3 Bft: Light/Gentle Breeze
-    [0.40, "rgba(37, 99, 235, 0.35)"],    # 4 Bft: Moderate Breeze
-    [0.55, "rgba(34, 197, 94, 0.40)"],    # 5 Bft: Fresh Breeze
-    [0.70, "rgba(234, 179, 8, 0.45)"],    # 6 Bft: Strong Breeze
-    [0.85, "rgba(168, 85, 247, 0.50)"],   # 7 Bft: Near Gale
-    [1.00, "rgba(239, 68, 68, 0.55)"]     # 8+ Bft: Gale / Storm
+    [0.00, "rgba(255, 255, 255, 0.25)"],
+    [0.22, "rgba(56, 189, 248, 0.30)"],
+    [0.40, "rgba(37, 99, 235, 0.35)"],
+    [0.55, "rgba(34, 197, 94, 0.40)"],
+    [0.70, "rgba(234, 179, 8, 0.45)"],
+    [0.85, "rgba(168, 85, 247, 0.50)"],
+    [1.00, "rgba(239, 68, 68, 0.55)"]
 ]
 
 WIND_COLORSCALE_SPEED = [
@@ -81,19 +81,19 @@ st.markdown("""
         background: #ffffff;
         border: 1px solid #e2e8f0;
         border-radius: 8px;
-        padding: 12px 16px;
+        padding: 10px 14px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         text-align: center;
     }
     .wg-card-title {
-        font-size: 0.8rem;
+        font-size: 0.78rem;
         font-weight: 600;
         text-transform: uppercase;
         color: #64748b;
-        margin-bottom: 4px;
+        margin-bottom: 3px;
     }
     .wg-card-val {
-        font-size: 1.6rem;
+        font-size: 1.5rem;
         font-weight: 700;
         font-family: monospace;
     }
@@ -101,11 +101,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🪁 Porto Pollo (Sardinia) – Live Wind Station")
-st.caption("On-demand server-side viewport rendering (*Drag to pan or scroll wheel to zoom – data loads dynamically*).")
 
-# 1. Cached raw data reader
 @st.cache_data(ttl=60, show_spinner=False)
-def load_base_data(csv_path):
+def load_all_records(csv_path):
     if not os.path.exists(csv_path):
         return None
     df = pd.read_csv(csv_path, on_bad_lines="skip")
@@ -116,15 +114,15 @@ def load_base_data(csv_path):
     df = df[df["timestamp"] >= "2026-08-27 13:11:00"].reset_index(drop=True)
     return df
 
-df_all = load_base_data(CSV_FILE)
+df_all = load_all_records(CSV_FILE)
 
 if df_all is not None and not df_all.empty:
     latest = df_all.iloc[-1]
     latest_bft = knots_to_bft(latest['velocita_knots'])
-    t_max = df_all["timestamp"].max()
-    t_min = df_all["timestamp"].min()
+    t_global_max = df_all["timestamp"].max()
+    t_global_min = df_all["timestamp"].min()
 
-    # 2. KPI Banner
+    # 1. KPI Status Bar
     speed_bg, speed_fg = get_wg_badge(latest['velocita_knots'])
     gust_bg, gust_fg = get_wg_badge(latest['raffica_knots'])
     temp_val = latest.get("temperatura_c")
@@ -132,23 +130,23 @@ if df_all is not None and not df_all.empty:
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
         st.markdown(f"""<div class="wg-card">
-            <div class="wg-card-title">💨 Live Wind (Bft / Knots)</div>
+            <div class="wg-card-title">💨 Live Speed</div>
             <div class="wg-card-val" style="color: {speed_fg}; background:{speed_bg}; border-radius:4px; padding:2px;">
-                {latest_bft:.1f} <span style="font-size:0.9rem;">Bft</span> <span style="font-size:0.85rem; font-weight:normal;">({latest['velocita_knots']:.1f} kts)</span>
+                {latest_bft:.1f} <span style="font-size:0.85rem;">Bft</span> <span style="font-size:0.8rem; font-weight:normal;">({latest['velocita_knots']:.1f} kts)</span>
             </div>
         </div>""", unsafe_allow_html=True)
     with c2:
         st.markdown(f"""<div class="wg-card">
-            <div class="wg-card-title">💨 Live Gust (Knots)</div>
+            <div class="wg-card-title">💨 Live Gust</div>
             <div class="wg-card-val" style="color: {gust_fg}; background:{gust_bg}; border-radius:4px; padding:2px;">
-                {latest['raffica_knots']:.1f} <span style="font-size:0.9rem;">kts</span>
+                {latest['raffica_knots']:.1f} <span style="font-size:0.85rem;">kts</span>
             </div>
         </div>""", unsafe_allow_html=True)
     with c3:
         st.markdown(f"""<div class="wg-card">
             <div class="wg-card-title">🧭 Direction</div>
             <div class="wg-card-val" style="color: #0f172a;">
-                {latest['direzione_cardinal']} <span style="font-size:1.1rem; color:#64748b;">({latest['direzione_deg']:.0f}°)</span>
+                {latest['direzione_cardinal']} <span style="font-size:1.0rem; color:#64748b;">({latest['direzione_deg']:.0f}°)</span>
             </div>
         </div>""", unsafe_allow_html=True)
     with c4:
@@ -161,65 +159,79 @@ if df_all is not None and not df_all.empty:
     with c5:
         st.markdown(f"""<div class="wg-card">
             <div class="wg-card-title">⏱️ Last Reading</div>
-            <div class="wg-card-val" style="font-size:1.1rem; padding-top:6px; color:#334155;">
+            <div class="wg-card-val" style="font-size:1.05rem; padding-top:6px; color:#334155;">
                 {latest['timestamp'].strftime('%d.%m. %H:%M')}
             </div>
         </div>""", unsafe_allow_html=True)
 
-    st.write("")
+    st.divider()
 
-    # 3. Viewport State Management
-    if "current_range" not in st.session_state:
-        st.session_state.current_range = [
-            max(t_min, t_max - pd.Timedelta(hours=6)),
-            t_max
-        ]
+    # 2. Viewport Session State (Default: 6 hours)
+    if "view_end" not in st.session_state:
+        st.session_state.view_end = t_global_max
+    if "window_hours" not in st.session_state:
+        st.session_state.window_hours = 6
 
-    col_btn1, col_btn2, col_btn3, col_btn4, col_daytime = st.columns([1, 1, 1, 1.2, 1.8])
-    with col_btn1:
-        if st.button("⏪ 6h Live (Default)"):
-            st.session_state.current_range = [max(t_min, t_max - pd.Timedelta(hours=6)), t_max]
+    # 3. Interactive History Navigation Controls
+    nav_col1, nav_col2, nav_col3, nav_col4, nav_col5, nav_col6, nav_col7 = st.columns([1, 1, 1.4, 1.4, 1, 1, 1.5])
+    
+    with nav_col1:
+        if st.button("◀◀ -1 Day"):
+            st.session_state.view_end = max(t_global_min + pd.Timedelta(hours=st.session_state.window_hours), st.session_state.view_end - pd.Timedelta(days=1))
             st.rerun()
-    with col_btn2:
-        if st.button("24 Hours"):
-            st.session_state.current_range = [max(t_min, t_max - pd.Timedelta(hours=24)), t_max]
+    with nav_col2:
+        if st.button("◀ -6 Hours"):
+            st.session_state.view_end = max(t_global_min + pd.Timedelta(hours=st.session_state.window_hours), st.session_state.view_end - pd.Timedelta(hours=6))
             st.rerun()
-    with col_btn3:
-        if st.button("3 Days"):
-            st.session_state.current_range = [max(t_min, t_max - pd.Timedelta(days=3)), t_max]
+    with nav_col3:
+        st.session_state.window_hours = st.selectbox(
+            "Window Span",
+            options=[6, 12, 24, 72, 168],
+            index=0,
+            format_func=lambda x: f"{x} Hours" if x < 24 else (f"{x//24} Day{'s' if x>24 else ''}")
+        )
+    with nav_col4:
+        daytime_only = st.checkbox("☀️ 06:00–19:00", value=False)
+    with nav_col5:
+        if st.button("+6 Hours ▶"):
+            st.session_state.view_end = min(t_global_max, st.session_state.view_end + pd.Timedelta(hours=6))
             st.rerun()
-    with col_btn4:
-        if st.button("Fit All History"):
-            st.session_state.current_range = [t_min, t_max]
+    with nav_col6:
+        if st.button("+1 Day ▶▶"):
+            st.session_state.view_end = min(t_global_max, st.session_state.view_end + pd.Timedelta(days=1))
             st.rerun()
-    with col_daytime:
-        daytime_only = st.checkbox("☀️ Daytime Only (06:00 – 19:00)", value=False)
+    with nav_col7:
+        if st.button("🔴 Jump to Live"):
+            st.session_state.view_end = t_global_max
+            st.rerun()
 
-    # 4. Selective Data Slicing (+1h buffer on each side for smooth curve edges)
-    req_start = pd.to_datetime(st.session_state.current_range[0])
-    req_end = pd.to_datetime(st.session_state.current_range[1])
+    # 4. Server-Side Slicing of Only the Active Window
+    v_end = st.session_state.view_end
+    v_start = v_end - pd.Timedelta(hours=st.session_state.window_hours)
 
-    fetch_start = req_start - pd.Timedelta(hours=1)
-    fetch_end = req_end + pd.Timedelta(hours=1)
-
-    df_filtered = df_all[(df_all["timestamp"] >= fetch_start) & (df_all["timestamp"] <= fetch_end)].copy()
+    # Slice strictly the needed window + small margin for boundary interpolation
+    df_slice = df_all[
+        (df_all["timestamp"] >= v_start - pd.Timedelta(minutes=30)) & 
+        (df_all["timestamp"] <= v_end + pd.Timedelta(minutes=30))
+    ].copy()
 
     if daytime_only:
-        df_filtered = df_filtered[df_filtered["timestamp"].dt.hour.between(6, 18)].copy()
+        df_slice = df_slice[df_slice["timestamp"].dt.hour.between(6, 18)].copy()
 
-    if df_filtered.empty:
-        df_filtered = df_all.tail(10).copy()
+    if df_slice.empty:
+        st.warning("No station records found in this time window.")
+        df_slice = df_all.tail(15).copy()
 
-    has_temp = "temperatura_c" in df_filtered.columns and df_filtered["temperatura_c"].notnull().any()
+    has_temp = "temperatura_c" in df_slice.columns and df_slice["temperatura_c"].notnull().any()
 
-    # Precompute coordinates only for the active slice
-    df_filtered["velocita_bft"] = knots_to_bft(df_filtered["velocita_knots"])
-    df_filtered["raffica_bft"] = knots_to_bft(df_filtered["raffica_knots"])
-    df_filtered["velocita_plot_y"] = bft_to_stretched(df_filtered["velocita_bft"])
-    df_filtered["raffica_plot_y"] = bft_to_stretched(df_filtered["raffica_bft"])
+    # Compute Beaufort & Stretched coordinates on the lightweight slice
+    df_slice["velocita_bft"] = knots_to_bft(df_slice["velocita_knots"])
+    df_slice["raffica_bft"] = knots_to_bft(df_slice["raffica_knots"])
+    df_slice["velocita_plot_y"] = bft_to_stretched(df_slice["velocita_bft"])
+    df_slice["raffica_plot_y"] = bft_to_stretched(df_slice["raffica_bft"])
 
-    # Gap Disconnectors
-    df_plot = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
+    # Disconnect gaps > 45 minutes
+    df_plot = df_slice.sort_values("timestamp").reset_index(drop=True)
     time_diffs = df_plot["timestamp"].diff()
     gap_indices = df_plot[time_diffs > pd.Timedelta(minutes=45)].index
 
@@ -243,7 +255,7 @@ if df_all is not None and not df_all.empty:
     else:
         df_plot_lines = df_plot.copy()
 
-    # Dynamic Text Labels & Arrow Record for the slice
+    # Dynamic Labels & Arrow Vectors for the Slice
     speed_labels = [""] * len(df_plot_lines)
     gust_labels = [""] * len(df_plot_lines)
     labeled_speed_points = []
@@ -267,8 +279,8 @@ if df_all is not None and not df_all.empty:
         last_gust_val = df_plot_lines.loc[f_idx, 'raffica_knots'] if pd.notnull(df_plot_lines.loc[f_idx, 'raffica_knots']) else -999.0
         last_gust_idx = f_idx
 
-        min_pts_gap = 2 if len(valid_indices) < 100 else 4
-        fallback_step = max(min_pts_gap * 2, len(valid_indices) // 30)
+        min_pts_gap = 2 if len(valid_indices) < 80 else 4
+        fallback_step = max(min_pts_gap * 2, len(valid_indices) // 25)
 
         for idx in valid_indices[1:]:
             curr_val = df_plot_lines.loc[idx, "velocita_knots"]
@@ -299,7 +311,7 @@ if df_all is not None and not df_all.empty:
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
 
-    # High-Density Interpolation for Smooth Color Gradient Fill (Only computed for active slice)
+    # 1-minute interpolation for smooth gradients
     fill_segments = []
     seg_start = 0
     gap_pos = list(gap_indices) + [len(df_plot)]
@@ -321,7 +333,7 @@ if df_all is not None and not df_all.empty:
         shared_xaxes=True,
         vertical_spacing=0.035,
         subplot_titles=(
-            "<b>Wind speed and gusts (Stretched Beaufort Scale)</b>",
+            f"<b>Wind speed and gusts – Stretched Beaufort ({v_start.strftime('%d.%m %H:%M')} to {v_end.strftime('%d.%m %H:%M')})</b>",
             "<b>Wind direction</b>",
             "<b>Temperature (°C) – 🟡 Daytime (06-19h) | 🔵 Nighttime (19-06h)</b>" if has_temp else None
         ),
@@ -438,7 +450,7 @@ if df_all is not None and not df_all.empty:
     ), row=2, col=1)
 
     # Subplot 2: Compass Arrows
-    df_for_arrows = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
+    df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
     steady_step = max(3, len(df_for_arrows) // 25)
@@ -524,7 +536,7 @@ if df_all is not None and not df_all.empty:
 
         fig.update_yaxes(title_text="°C", row=3, col=1, gridcolor="#e2e8f0", fixedrange=True)
 
-    # Vertical Day/Night Shading
+    # Night Shading
     if not daytime_only and not df_plot_lines.empty:
         t_slice_min = df_plot_lines["timestamp"].min()
         t_slice_max = df_plot_lines["timestamp"].max()
@@ -546,16 +558,8 @@ if df_all is not None and not df_all.empty:
     bft_ticks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     bft_stretched_vals = [bft_to_stretched(b) for b in bft_ticks]
     bft_labels = [
-        "0 Bft",
-        "1 Bft",
-        "2 Bft",
-        "3 Bft (Gentle)",
-        "4 Bft (Moderate)",
-        "5 Bft (Fresh)",
-        "6 Bft (Strong)",
-        "7 Bft (Near Gale)",
-        "8 Bft (Gale)",
-        "9 Bft (Storm)"
+        "0 Bft", "1 Bft", "2 Bft", "3 Bft (Gentle)", "4 Bft (Moderate)",
+        "5 Bft (Fresh)", "6 Bft (Strong)", "7 Bft (Near Gale)", "8 Bft (Gale)", "9 Bft (Storm)"
     ]
 
     max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
@@ -582,11 +586,10 @@ if df_all is not None and not df_all.empty:
         fixedrange=True
     )
 
-    # Lock axis view precisely to the requested session range
     fig.update_xaxes(
         gridcolor="#e2e8f0",
         showgrid=True,
-        range=[req_start, req_end]
+        range=[v_start, v_end]
     )
 
     fig.update_layout(
@@ -609,13 +612,10 @@ if df_all is not None and not df_all.empty:
         margin=dict(l=35, r=20, t=50, b=30)
     )
 
-    # 6. Render Chart and Capture Client-Side Pan/Zoom Events
-    event = st.plotly_chart(
+    # 6. Render Fast Windowed Plot
+    st.plotly_chart(
         fig,
         use_container_width=True,
-        on_select="rerun",
-        selection_mode="points",
-        key="wind_chart",
         config={
             "scrollZoom": True,
             "displayModeBar": True,
@@ -624,22 +624,9 @@ if df_all is not None and not df_all.empty:
         }
     )
 
-    # 7. Listen for Pan/Zoom coordinate updates from browser to load matching slice
-    if event and "relayout" in event and event["relayout"]:
-        relayout_dict = event["relayout"]
-        if "xaxis.range[0]" in relayout_dict and "xaxis.range[1]" in relayout_dict:
-            new_x0 = pd.to_datetime(relayout_dict["xaxis.range[0]"])
-            new_x1 = pd.to_datetime(relayout_dict["xaxis.range[1]"])
-            
-            # Avoid redundant reruns on micro-adjustments
-            if abs((new_x0 - req_start).total_seconds()) > 60 or abs((new_x1 - req_end).total_seconds()) > 60:
-                st.session_state.current_range = [new_x0, new_x1]
-                st.rerun()
-
-    # Numerical Log for active slice
-    with st.expander("📋 View Numerical Data Log (Current Viewport)"):
+    with st.expander("📋 View Data Log (Current Window)"):
         st.dataframe(
-            df_filtered[(df_filtered["timestamp"] >= req_start) & (df_filtered["timestamp"] <= req_end)].sort_values("timestamp", ascending=False),
+            df_slice[(df_slice["timestamp"] >= v_start) & (df_slice["timestamp"] <= v_end)].sort_values("timestamp", ascending=False),
             use_container_width=True
         )
 else:
