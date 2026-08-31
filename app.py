@@ -78,7 +78,7 @@ if os.path.exists(CSV_FILE):
         st.caption(
             f"Showing **{len(df_filtered)} datapoints** ({time_range}) | "
             f"💨 Avg Speed: **{avg_speed} kts** | 💨 Max Gust: **{max_gust} kts**"
-            f"{temp_stats} | 🧭 *Arrows in the direction plot show the wind vector.*"
+            f"{temp_stats} | 🧭 *Arrow Color: 🟢 **≥18 kts (Go)** | 🔴 **<18 kts (Light)**.*"
         )
 
         # 3. Create 3 Subplots: Speed (Top), Direction (Middle), Temperature (Bottom)
@@ -122,23 +122,28 @@ if os.path.exists(CSV_FILE):
             y=df_filtered["direzione_deg"],
             mode="markers+lines", 
             name="Direction (°)",
-            marker=dict(color="#059669", size=6),
-            line=dict(color="#10b981", dash="dot", width=1),
-            customdata=df_filtered["direzione_cardinal"],
-            hovertemplate="<b>Direction:</b> %{customdata} (%{y}°)<extra></extra>"
+            marker=dict(color="#64748b", size=5),
+            line=dict(color="#94a3b8", dash="dot", width=1),
+            customdata=df_filtered[["direzione_cardinal", "velocita_knots"]],
+            hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y}°)<br><b>Speed:</b> %{customdata[1]:.2f} kts<extra></extra>"
         ), row=2, col=1)
 
-        # Long Stem Vector Arrows in Subplot 2 (Degrees)
+        # Long Stem Vector Arrows in Subplot 2 with Conditional Colors
         step = max(1, len(df_filtered) // 40)
         df_sub = df_filtered.iloc[::step]
 
-        arrow_length_px = 35  # Increased length for a prominent stem
+        arrow_length_px = 35  # Length of stem + arrowhead
 
         for _, row_data in df_sub.iterrows():
             angle_deg = row_data["arrow_angle"]
+            speed_val = row_data["velocita_knots"]
+            
             if pd.isna(angle_deg) or pd.isna(row_data["direzione_deg"]):
                 continue
             
+            # Dynamic color: Green for >= 18 knots, Red for < 18 knots
+            arrow_color = "#16a34a" if (pd.notnull(speed_val) and speed_val >= 18.0) else "#dc2626"
+
             rad = math.radians(angle_deg)
             dx = arrow_length_px * math.sin(rad)
             dy = arrow_length_px * math.cos(rad)
@@ -146,18 +151,18 @@ if os.path.exists(CSV_FILE):
             fig.add_annotation(
                 x=row_data["timestamp"],
                 y=row_data["direzione_deg"],
-                xref="x2",        # References the second subplot (Direction)
+                xref="x2",
                 yref="y2",
-                ax=-dx,           # Tail offset X
-                ay=dy,            # Tail offset Y
+                ax=-dx,
+                ay=dy,
                 axref="pixel",
                 ayref="pixel",
                 showarrow=True,
-                arrowhead=2,      # Solid triangle head
-                arrowsize=1.5,    # Head size
-                arrowwidth=2.5,   # Stem thickness
-                arrowcolor="#dc2626",  # High-contrast bold red/crimson
-                opacity=0.9
+                arrowhead=2,
+                arrowsize=1.5,
+                arrowwidth=2.5,
+                arrowcolor=arrow_color,  # ⬅️ Dynamic color applied here
+                opacity=0.95
             )
 
         # Subplot 3: Temperature (Bottom)
