@@ -105,7 +105,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🪁 Porto Pollo (Sardinia) – Live Wind Station")
-st.caption("Real-time weather station monitor with **Continuous Angulation Wind Vectors & Gradient Fill** (*Scroll wheel to zoom, drag to pan horizontally*).")
+st.caption("Defaulting to **Last 6 Hours** viewport (*Drag chart horizontally or scroll mouse wheel to explore full historical record*).")
 
 if os.path.exists(CSV_FILE):
     df = pd.read_csv(CSV_FILE, on_bad_lines="skip")
@@ -113,7 +113,7 @@ if os.path.exists(CSV_FILE):
         df["timestamp"] = pd.to_datetime(df["timestamp"])
         df = df.drop_duplicates(subset=["timestamp"]).sort_values("timestamp")
 
-        # Hard start cutoff adjusted to include 13:11 onwards
+        # Hard start cutoff
         df = df[df["timestamp"] >= "2026-08-27 13:11:00"]
 
         if df.empty:
@@ -167,30 +167,21 @@ if os.path.exists(CSV_FILE):
 
         st.write("")
 
-        # 2. Time Window Controls
-        col_filter, col_daytime = st.columns([3, 1])
-        with col_filter:
-            time_range = st.radio(
-                "Time Window:",
-                options=["Last 6 Hours", "Last 24 Hours", "Last 3 Days", "Last 7 Days", "All History"],
-                index=1,
+        # 2. Viewport Reset Shortcuts & Daytime Filter
+        col_preset, col_daytime = st.columns([3, 1])
+        with col_preset:
+            time_preset = st.radio(
+                "Jump Viewport Window:",
+                options=["Last 6 Hours (Default)", "Last 24 Hours", "Last 3 Days", "Last 7 Days", "Fit Entire History"],
+                index=0,  # ⬅️ Defaults to Last 6 Hours on initial page load
                 horizontal=True
             )
         with col_daytime:
             st.write("")
             daytime_only = st.checkbox("☀️ Daytime Only (06:00 – 19:00)", value=False)
 
-        now = df["timestamp"].max()
-        if time_range == "Last 6 Hours":
-            df_filtered = df[df["timestamp"] >= now - pd.Timedelta(hours=6)].copy()
-        elif time_range == "Last 24 Hours":
-            df_filtered = df[df["timestamp"] >= now - pd.Timedelta(hours=24)].copy()
-        elif time_range == "Last 3 Days":
-            df_filtered = df[df["timestamp"] >= now - pd.Timedelta(days=3)].copy()
-        elif time_range == "Last 7 Days":
-            df_filtered = df[df["timestamp"] >= now - pd.Timedelta(days=7)].copy()
-        else:
-            df_filtered = df.copy()
+        # Plot all data so scrolling works across the whole timeline
+        df_filtered = df.copy()
 
         if daytime_only:
             df_filtered = df_filtered[df_filtered["timestamp"].dt.hour.between(6, 18)].copy()
@@ -211,7 +202,7 @@ if os.path.exists(CSV_FILE):
         df_for_arrows = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
         df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
-        # Gap Disconnectors for Lines (Raised threshold to 45 min so 30m gaps connect seamlessly)
+        # Gap Disconnectors for Lines
         df_plot = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
         time_diffs = df_plot["timestamp"].diff()
         gap_indices = df_plot[time_diffs > pd.Timedelta(minutes=45)].index
@@ -260,8 +251,8 @@ if os.path.exists(CSV_FILE):
             last_gust_val = df_plot_lines.loc[f_idx, 'raffica_knots'] if pd.notnull(df_plot_lines.loc[f_idx, 'raffica_knots']) else -999.0
             last_gust_idx = f_idx
 
-            min_pts_gap = 3 if len(valid_indices) < 200 else (5 if len(valid_indices) < 600 else 8)
-            fallback_step = max(min_pts_gap * 2, len(valid_indices) // 35)
+            min_pts_gap = 3
+            fallback_step = max(6, len(valid_indices) // 45)
 
             for idx in valid_indices[1:]:
                 curr_val = df_plot_lines.loc[idx, "velocita_knots"]
@@ -431,7 +422,7 @@ if os.path.exists(CSV_FILE):
         ), row=2, col=1)
 
         # Subplot 2: Compass Arrows
-        steady_step = max(4, len(df_for_arrows) // 30)
+        steady_step = max(4, len(df_for_arrows) // 35)
         selected_indices = []
         if not df_for_arrows.empty:
             selected_indices.append(0)
@@ -571,9 +562,31 @@ if os.path.exists(CSV_FILE):
             gridcolor="#e2e8f0",
             fixedrange=True
         )
+
+        # --- Dynamic Viewport Calculation (Default: Last 6 Hours, with full history accessible) ---
+        t_latest = df_plot_lines["timestamp"].max()
+        t_earliest = df_plot_lines["timestamp"].min()
+
+        if time_preset == "Last 6 Hours (Default)":
+            x_start = max(t_earliest, t_latest - pd.Timedelta(hours=6))
+            x_end = t_latest
+        elif time_preset == "Last 24 Hours":
+            x_start = max(t_earliest, t_latest - pd.Timedelta(hours=24))
+            x_end = t_latest
+        elif time_preset == "Last 3 Days":
+            x_start = max(t_earliest, t_latest - pd.Timedelta(days=3))
+            x_end = t_latest
+        elif time_preset == "Last 7 Days":
+            x_start = max(t_earliest, t_latest - pd.Timedelta(days=7))
+            x_end = t_latest
+        else:  # Fit Entire History
+            x_start = t_earliest
+            x_end = t_latest
+
         fig.update_xaxes(
             gridcolor="#e2e8f0",
-            showgrid=True
+            showgrid=True,
+            range=[x_start, x_end]  # ⬅️ Sets initial view while retaining all data for scrolling
         )
 
         fig.update_layout(
@@ -609,7 +622,7 @@ if os.path.exists(CSV_FILE):
         )
 
         # Numerical Log
-        with st.expander(f"📋 View Numerical Data Log ({time_range})"):
+        with st.expander("📋 View Numerical Data Log (All Records)"):
             st.dataframe(
                 df_filtered.sort_values("timestamp", ascending=False),
                 use_container_width=True
