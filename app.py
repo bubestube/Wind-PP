@@ -16,7 +16,6 @@ st.set_page_config(
 CSV_FILE = "porto_pollo_wind_history.csv"
 BFT_EXP = 1.55
 
-# --- Vectorized Calculations ---
 def knots_to_bft(knots):
     if isinstance(knots, pd.Series):
         s = pd.to_numeric(knots, errors="coerce").clip(lower=0)
@@ -32,27 +31,6 @@ def bft_to_stretched(bft_val):
     if pd.isna(bft_val):
         return np.nan
     return math.pow(max(0.0, float(bft_val)), BFT_EXP)
-
-# Continuous Beaufort Color Scale for Area Fills (0 to 8+ Bft)
-WIND_COLORSCALE_GUST = [
-    [0.00, "rgba(255, 255, 255, 0.25)"],  # 0-1 Bft: Calm / Light
-    [0.22, "rgba(56, 189, 248, 0.30)"],   # 2-3 Bft: Light/Gentle Breeze
-    [0.40, "rgba(37, 99, 235, 0.35)"],    # 4 Bft: Moderate Breeze
-    [0.55, "rgba(34, 197, 94, 0.40)"],    # 5 Bft: Fresh Breeze
-    [0.70, "rgba(234, 179, 8, 0.45)"],    # 6 Bft: Strong Breeze
-    [0.85, "rgba(168, 85, 247, 0.50)"],   # 7 Bft: Near Gale
-    [1.00, "rgba(239, 68, 68, 0.55)"]     # 8+ Bft: Gale / Storm
-]
-
-WIND_COLORSCALE_SPEED = [
-    [0.00, "rgba(255, 255, 255, 0.50)"],
-    [0.22, "rgba(56, 189, 248, 0.55)"],
-    [0.40, "rgba(37, 99, 235, 0.60)"],
-    [0.55, "rgba(34, 197, 94, 0.65)"],
-    [0.70, "rgba(234, 179, 8, 0.70)"],
-    [0.85, "rgba(168, 85, 247, 0.75)"],
-    [1.00, "rgba(239, 68, 68, 0.80)"]
-]
 
 def get_wg_badge(val):
     if pd.isna(val):
@@ -101,9 +79,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🪁 Porto Pollo (Sardinia) – Live Wind Station")
-st.caption("Hybrid High-Resolution Live + Downsampled Background History (*Instant loading, full drag & pan capability*).")
+st.caption("GPU-accelerated live monitor (*Fast loading, instant interactions*).")
 
-# 1. Cached Data Loader
+# 1. Cached CSV Reader
 @st.cache_data(ttl=60, show_spinner=False)
 def load_all_records(csv_path):
     if not os.path.exists(csv_path):
@@ -133,7 +111,7 @@ if df_raw is not None and not df_raw.empty:
     latest = df_raw.iloc[-1]
     latest_bft = latest['velocita_bft']
 
-    # 2. KPI Cards
+    # 2. Status Cards
     speed_bg, speed_fg = get_wg_badge(latest['velocita_knots'])
     gust_bg, gust_fg = get_wg_badge(latest['raffica_knots'])
     temp_val = latest.get("temperatura_c")
@@ -177,12 +155,12 @@ if df_raw is not None and not df_raw.empty:
 
     st.write("")
 
-    # 3. Viewport Presets & Daytime Filter
+    # 3. Viewport Selection
     col_preset, col_daytime = st.columns([3, 1])
     with col_preset:
         time_preset = st.radio(
-            "Initial Viewport Range:",
-            options=["Last 6 Hours (Default)", "Last 24 Hours", "Last 3 Days", "Last 7 Days", "Fit All History"],
+            "Time Range:",
+            options=["Last 6 Hours", "Last 24 Hours", "Last 3 Days", "Last 7 Days", "All History"],
             index=0,
             horizontal=True
         )
@@ -190,35 +168,36 @@ if df_raw is not None and not df_raw.empty:
         st.write("")
         daytime_only = st.checkbox("☀️ Daytime Only (06:00 – 19:00)", value=False)
 
-    df_base = df_raw.copy()
+    df_filtered = df_raw.copy()
     if daytime_only:
-        df_base = df_base[df_base["timestamp"].dt.hour.between(6, 18)].copy()
+        df_filtered = df_filtered[df_filtered["timestamp"].dt.hour.between(6, 18)].copy()
 
-    if df_base.empty:
-        st.warning("No records found.")
-        df_base = df_raw.copy()
-
-    # --- OPTION 2: Two-Tier Density Slicing ---
-    # Full resolution for the last 6 hours, downsampled for everything older
-    t_max_full = df_base["timestamp"].max()
-    t_cutoff_6h = t_max_full - pd.Timedelta(hours=6)
-
-    df_recent = df_base[df_base["timestamp"] >= t_cutoff_6h]
-    df_older = df_base[df_base["timestamp"] < t_cutoff_6h]
-
-    # Downsample older records by taking every 4th point (~8-10 min intervals)
-    if len(df_older) > 50:
-        downsample_factor = 4
-        df_older_thin = df_older.iloc[::downsample_factor]
+    # Apply strict time slicing to prevent Plotly DOM overflow
+    t_end = df_filtered["timestamp"].max()
+    if time_preset == "Last 6 Hours":
+        t_start = t_end - pd.Timedelta(hours=6)
+    elif time_preset == "Last 24 Hours":
+        t_start = t_end - pd.Timedelta(hours=24)
+    elif time_preset == "Last 3 Days":
+        t_start = t_end - pd.Timedelta(days=3)
+    elif time_preset == "Last 7 Days":
+        t_start = t_end - pd.Timedelta(days=7)
     else:
-        df_older_thin = df_older
+        t_start = df_filtered["timestamp"].min()
 
-    df_combined = pd.concat([df_older_thin, df_recent]).drop_duplicates(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True)
+    df_slice = df_filtered[(df_filtered["timestamp"] >= t_start) & (df_filtered["timestamp"] <= t_end)].copy()
+    if df_slice.empty:
+        df_slice = df_filtered.tail(20).copy()
 
-    has_temp = "temperatura_c" in df_combined.columns and df_combined["temperatura_c"].notnull().any()
+    # Downsample slice if still too large for smooth rendering
+    if len(df_slice) > 400:
+        step = len(df_slice) // 400
+        df_slice = df_slice.iloc[::step].copy()
+
+    has_temp = "temperatura_c" in df_slice.columns and df_slice["temperatura_c"].notnull().any()
 
     # Gap Disconnectors
-    df_plot = df_combined.copy()
+    df_plot = df_slice.sort_values("timestamp").reset_index(drop=True)
     time_diffs = df_plot["timestamp"].diff()
     gap_indices = df_plot[time_diffs > pd.Timedelta(minutes=45)].index
 
@@ -242,7 +221,7 @@ if df_raw is not None and not df_raw.empty:
     else:
         df_plot_lines = df_plot.copy()
 
-    # Dynamic Density Labels & Vector Points Registry
+    # In-Trace Labels & Vectors
     speed_labels = [""] * len(df_plot_lines)
     gust_labels = [""] * len(df_plot_lines)
     labeled_speed_points = []
@@ -251,68 +230,22 @@ if df_raw is not None and not df_raw.empty:
     valid_indices = df_plot_lines.index[valid_mask].tolist()
 
     if valid_indices:
-        f_idx = valid_indices[0]
-        v0 = df_plot_lines.loc[f_idx, 'velocita_knots']
-        d0 = df_plot_lines.loc[f_idx, 'direzione_deg']
-        speed_labels[f_idx] = f"{v0:.1f}"
-        labeled_speed_points.append({
-            "timestamp": df_plot_lines.loc[f_idx, 'timestamp'],
-            "velocita_plot_y": df_plot_lines.loc[f_idx, 'velocita_plot_y'],
-            "direzione_deg": d0
-        })
-
-        last_s_val = v0
-        last_s_idx = f_idx
-        last_g_val = df_plot_lines.loc[f_idx, 'raffica_knots'] if pd.notnull(df_plot_lines.loc[f_idx, 'raffica_knots']) else -999.0
-        last_g_idx = f_idx
-
-        v_arr = df_plot_lines["velocita_knots"].to_numpy()
-        r_arr = df_plot_lines["raffica_knots"].to_numpy()
-        d_arr = df_plot_lines["direzione_deg"].to_numpy()
-        y_arr = df_plot_lines["velocita_plot_y"].to_numpy()
-        t_arr = df_plot_lines["timestamp"].to_numpy()
-
-        for idx in valid_indices[1:]:
-            curr_v = v_arr[idx]
-            curr_d = d_arr[idx]
-            curr_g = r_arr[idx]
-            curr_time = t_arr[idx]
-
-            # In the 6h window, use tight spacing; in older history, use larger spacing
-            is_in_6h = curr_time >= np.datetime64(t_cutoff_6h)
-            min_gap = 2 if is_in_6h else 4
-            delta_target = 1.0 if is_in_6h else 2.0
-            fallback_step = 6 if is_in_6h else 12
-
-            delta_s = abs(curr_v - last_s_val)
-            pts_since_s = idx - last_s_idx
-
-            if (delta_s >= delta_target and pts_since_s >= min_gap) or pts_since_s >= fallback_step:
-                speed_labels[idx] = f"{curr_v:.1f}"
+        label_stride = max(4, len(valid_indices) // 18)
+        for i, idx in enumerate(valid_indices):
+            if i % label_stride == 0 or i == len(valid_indices) - 1:
+                speed_labels[idx] = f"{df_plot_lines.loc[idx, 'velocita_knots']:.1f}"
+                if pd.notnull(df_plot_lines.loc[idx, 'raffica_knots']):
+                    gust_labels[idx] = f"{df_plot_lines.loc[idx, 'raffica_knots']:.1f}"
                 labeled_speed_points.append({
-                    "timestamp": curr_time,
-                    "velocita_plot_y": y_arr[idx],
-                    "direzione_deg": curr_d
+                    "timestamp": df_plot_lines.loc[idx, 'timestamp'],
+                    "velocita_plot_y": df_plot_lines.loc[idx, 'velocita_plot_y'],
+                    "direzione_deg": df_plot_lines.loc[idx, 'direzione_deg']
                 })
-                last_s_val = curr_v
-                last_s_idx = idx
-
-            if pd.notnull(curr_g):
-                delta_g = abs(curr_g - last_g_val)
-                pts_since_g = idx - last_g_idx
-                if (delta_g >= delta_target and pts_since_g >= min_gap) or pts_since_g >= fallback_step:
-                    gust_labels[idx] = f"{curr_g:.1f}"
-                    last_g_val = curr_g
-                    last_g_idx = idx
 
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
 
-    # Direct gradient mapping without slow resampling loops
-    df_gradient_fill = df_plot.copy()
-    bar_width_ms = 3 * 60 * 1000
-
-    # 4. Build Multi-Panel Subplots
+    # 4. Build Subplots
     fig = make_subplots(
         rows=3 if has_temp else 2,
         cols=1,
@@ -326,41 +259,32 @@ if df_raw is not None and not df_raw.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # Subplot 1: Gust Gradient Fill Area
-    fig.add_trace(go.Bar(
-        x=df_gradient_fill["timestamp"],
-        y=df_gradient_fill["raffica_plot_y"],
-        marker=dict(
-            color=df_gradient_fill["raffica_bft"],
-            colorscale=WIND_COLORSCALE_GUST,
-            cmin=0,
-            cmax=8,
-            line=dict(width=0)
-        ),
-        width=bar_width_ms,
+    # Shaded Areas via Fast Vector Area
+    fig.add_trace(go.Scatter(
+        x=df_plot_lines["timestamp"],
+        y=df_plot_lines["raffica_plot_y"],
+        mode="lines",
+        fill="tozeroy",
+        fillcolor="rgba(239, 68, 68, 0.18)",
+        line=dict(width=0),
         hoverinfo="skip",
         showlegend=False,
-        name="Gust Gradient Fill"
+        connectgaps=False
     ), row=1, col=1)
 
-    # Subplot 1: Sustained Speed Gradient Fill Area
-    fig.add_trace(go.Bar(
-        x=df_gradient_fill["timestamp"],
-        y=df_gradient_fill["velocita_plot_y"],
-        marker=dict(
-            color=df_gradient_fill["velocita_bft"],
-            colorscale=WIND_COLORSCALE_SPEED,
-            cmin=0,
-            cmax=8,
-            line=dict(width=0)
-        ),
-        width=bar_width_ms,
+    fig.add_trace(go.Scatter(
+        x=df_plot_lines["timestamp"],
+        y=df_plot_lines["velocita_plot_y"],
+        mode="lines",
+        fill="tozeroy",
+        fillcolor="rgba(56, 189, 248, 0.35)",
+        line=dict(width=0),
         hoverinfo="skip",
         showlegend=False,
-        name="Speed Gradient Fill"
+        connectgaps=False
     ), row=1, col=1)
 
-    # Subplot 1: Gust Trace
+    # Gust Line
     fig.add_trace(go.Scatter(
         x=df_plot_lines["timestamp"],
         y=df_plot_lines["raffica_plot_y"],
@@ -376,7 +300,7 @@ if df_raw is not None and not df_raw.empty:
         hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=1, col=1)
 
-    # Subplot 1: Sustained Speed Trace with Number Below
+    # Speed Line
     fig.add_trace(go.Scatter(
         x=df_plot_lines["timestamp"],
         y=df_plot_lines["velocita_plot_y"],
@@ -392,8 +316,8 @@ if df_raw is not None and not df_raw.empty:
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
-    # Subplot 1: Exact Angulation Stemmed Vector Arrows
-    mini_arrow_len = 28
+    # Subplot 1: Speed Vector Arrows
+    mini_arrow_len = 24
     for pt in labeled_speed_points:
         deg = pt["direzione_deg"]
         if pd.isna(deg) or pd.isna(pt["velocita_plot_y"]):
@@ -408,15 +332,15 @@ if df_raw is not None and not df_raw.empty:
             y=pt["velocita_plot_y"],
             xref="x1",
             yref="y1",
-            yshift=-28,
+            yshift=-24,
             ax=-dx,
             ay=dy,
             axref="pixel",
             ayref="pixel",
             showarrow=True,
             arrowhead=2,
-            arrowsize=1,
-            arrowwidth=1,
+            arrowsize=0.6,
+            arrowwidth=1.3,
             arrowcolor="#0f172a",
             opacity=0.95
         )
@@ -433,36 +357,13 @@ if df_raw is not None and not df_raw.empty:
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=2, col=1)
 
-    # Subplot 2: Rotating Vector Wind Arrows
-    df_for_arrows = df_combined.copy().sort_values("timestamp").reset_index(drop=True)
+    # Subplot 2: Direction Compass Arrows (Strictly capped to 15 max)
+    df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
-    selected_indices = []
-    if not df_for_arrows.empty:
-        selected_indices.append(0)
-        last_idx = 0
-        last_deg = df_for_arrows.loc[0, "direzione_deg"]
-
-        for i in range(1, len(df_for_arrows)):
-            curr_deg = df_for_arrows.loc[i, "direzione_deg"]
-            curr_time = df_for_arrows.loc[i, "timestamp"]
-            if pd.isna(curr_deg):
-                continue
-
-            is_in_6h = curr_time >= t_cutoff_6h
-            step_limit = 3 if is_in_6h else 7
-            deg_diff_limit = 15.0 if is_in_6h else 25.0
-
-            delta_deg = abs((curr_deg - last_deg + 180) % 360 - 180)
-            points_since_last = i - last_idx
-
-            if delta_deg >= deg_diff_limit or points_since_last >= step_limit:
-                selected_indices.append(i)
-                last_idx = i
-                last_deg = curr_deg
-
-    df_sub = df_for_arrows.iloc[selected_indices]
-    arrow_length_px = 60
+    arrow_stride = max(1, len(df_for_arrows) // 15)
+    df_sub = df_for_arrows.iloc[::arrow_stride]
+    arrow_length_px = 50
 
     for _, row_data in df_sub.iterrows():
         angle_deg = row_data["arrow_angle"]
@@ -472,7 +373,6 @@ if df_raw is not None and not df_raw.empty:
             continue
 
         arrow_color = "#16a34a" if (pd.notnull(speed_val) and speed_val >= 18.0) else "#dc2626"
-
         rad = math.radians(angle_deg)
         dx = arrow_length_px * math.sin(rad)
         dy = arrow_length_px * math.cos(rad)
@@ -488,7 +388,7 @@ if df_raw is not None and not df_raw.empty:
             ayref="pixel",
             showarrow=True,
             arrowhead=2,
-            arrowsize=2,
+            arrowsize=0.7,
             arrowwidth=1.5,
             arrowcolor=arrow_color,
             opacity=0.9
@@ -506,7 +406,7 @@ if df_raw is not None and not df_raw.empty:
             mode="lines+markers",
             name="Temp (Day: 06-19h)",
             connectgaps=False,
-            line=dict(color="#eab308", width=2.2),
+            line=dict(color="#eab308", width=2.0),
             marker=dict(size=4, color="#eab308", line=dict(color="#ca8a04", width=1)),
             hovertemplate="<b>Temp (Day):</b> %{y:.1f} °C<extra></extra>"
         ), row=3, col=1)
@@ -518,16 +418,17 @@ if df_raw is not None and not df_raw.empty:
                 mode="lines+markers",
                 name="Temp (Night: 19-06h)",
                 connectgaps=False,
-                line=dict(color="#1e3a8a", width=2.2),
+                line=dict(color="#1e3a8a", width=2.0),
                 marker=dict(size=4, color="#1e3a8a", line=dict(color="#0f172a", width=1)),
                 hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
             ), row=3, col=1)
 
         fig.update_yaxes(title_text="°C", row=3, col=1, gridcolor="#e2e8f0", fixedrange=True)
 
-    # Vertical Night Shading
+    # Night Shading
     if not daytime_only and not df_plot_lines.empty:
         t_min_full = df_plot_lines["timestamp"].min()
+        t_max_full = df_plot_lines["timestamp"].max()
         curr_day = t_min_full.floor("D")
         while curr_day <= t_max_full:
             night_start = curr_day + pd.Timedelta(hours=19)
@@ -574,33 +475,16 @@ if df_raw is not None and not df_raw.empty:
         fixedrange=True
     )
 
-    # Default 6h Initial Viewport Window
-    t_end_view = df_plot_lines["timestamp"].max()
-    t_start_data = df_plot_lines["timestamp"].min()
-
-    if time_preset == "Last 6 Hours (Default)":
-        t_start_view = max(t_start_data, t_end_view - pd.Timedelta(hours=6))
-    elif time_preset == "Last 24 Hours":
-        t_start_view = max(t_start_data, t_end_view - pd.Timedelta(hours=24))
-    elif time_preset == "Last 3 Days":
-        t_start_view = max(t_start_data, t_end_view - pd.Timedelta(days=3))
-    elif time_preset == "Last 7 Days":
-        t_start_view = max(t_start_data, t_end_view - pd.Timedelta(days=7))
-    else:
-        t_start_view = t_start_data
-
     fig.update_xaxes(
         gridcolor="#e2e8f0",
         showgrid=True,
-        range=[t_start_view, t_end_view]
+        range=[t_start, t_end]
     )
 
     fig.update_layout(
         height=780 if has_temp else 600,
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
-        bargap=0,
-        barmode="overlay",
         font=dict(color="#1e293b", family="Arial, sans-serif"),
         dragmode="pan",
         hovermode="x unified",
@@ -615,7 +499,7 @@ if df_raw is not None and not df_raw.empty:
         margin=dict(l=35, r=20, t=50, b=30)
     )
 
-    # Render Chart
+    # 5. Render
     st.plotly_chart(
         fig,
         use_container_width=True,
@@ -627,9 +511,9 @@ if df_raw is not None and not df_raw.empty:
         }
     )
 
-    with st.expander("📋 View Full Data Log"):
+    with st.expander("📋 View Data Log"):
         st.dataframe(
-            df_base.sort_values("timestamp", ascending=False),
+            df_slice.sort_values("timestamp", ascending=False),
             use_container_width=True
         )
 else:
