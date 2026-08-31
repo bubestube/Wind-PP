@@ -400,7 +400,7 @@ if df is not None and not df.empty:
             ayref="pixel",
             showarrow=True,
             arrowhead=2,
-            arrowsize=0.55,
+            arrowsize=0.65,
             arrowwidth=1.4,
             arrowcolor="#0f172a",
             opacity=0.95
@@ -468,7 +468,7 @@ if df is not None and not df.empty:
             ayref="pixel",
             showarrow=True,
             arrowhead=2,
-            arrowsize=0.65,
+            arrowsize=2,
             arrowwidth=1.5,
             arrowcolor=arrow_color,
             opacity=0.9
