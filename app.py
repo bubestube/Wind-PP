@@ -23,6 +23,9 @@ if os.path.exists(CSV_FILE):
     if not df.empty and "timestamp" in df.columns:
         df["timestamp"] = pd.to_datetime(df["timestamp"])
         df = df.drop_duplicates(subset=["timestamp"]).sort_values("timestamp")
+
+        # ⬇️ ADD THIS LINE HERE ⬇️
+        df = df[df["timestamp"] >= "2026-08-27 13:41:00"]
         
         latest = df.iloc[-1]
         
