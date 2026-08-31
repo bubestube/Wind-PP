@@ -24,7 +24,7 @@ if os.path.exists(CSV_FILE):
         
         latest = df.iloc[-1]
         
-        # 1. Top Live KPI Cards (Always showing the most recent reading)
+        # 1. Top Live KPI Cards
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Velocità (Live Speed)", f"{latest['velocita_knots']} kts")
         col2.metric("Raffica (Live Gusts)", f"{latest['raffica_knots']} kts")
@@ -41,12 +41,12 @@ if os.path.exists(CSV_FILE):
             time_range = st.radio(
                 "Select Time Window:",
                 options=["Last 6 Hours", "Last 24 Hours", "Last 3 Days", "Last 7 Days", "All History"],
-                index=1,  # Defaults to Last 24 Hours
+                index=1,
                 horizontal=True
             )
 
         # Apply Time-Range Filtering
-        now = df["timestamp"].max()  # Anchor to latest timestamp in dataset
+        now = df["timestamp"].max()
         if time_range == "Last 6 Hours":
             df_filtered = df[df["timestamp"] >= now - pd.Timedelta(hours=6)]
         elif time_range == "Last 24 Hours":
@@ -61,21 +61,23 @@ if os.path.exists(CSV_FILE):
         if df_filtered.empty:
             df_filtered = df.copy()
 
-        # Period Summary Metrics
+        # Calculate blowing direction angle for Plotly arrows (meteorological: from + 180 = blowing to)
+        df_filtered["arrow_angle"] = (df_filtered["direzione_deg"].fillna(0) + 180) % 360
+
+        # Summary Metrics
         avg_speed = round(df_filtered["velocita_knots"].mean(), 1)
         max_gust = round(df_filtered["raffica_knots"].max(), 1)
-        
         has_temp = "temperatura_c" in df_filtered.columns and df_filtered["temperatura_c"].notnull().any()
         temp_stats = ""
         if has_temp:
             min_temp = round(df_filtered["temperatura_c"].min(), 1)
             max_temp = round(df_filtered["temperatura_c"].max(), 1)
-            temp_stats = f" | 🌡️ Temp Range: **{min_temp}°C - {max_temp}°C**"
+            temp_stats = f" | 🌡️ Temp: **{min_temp}°C - {max_temp}°C**"
 
         st.caption(
-            f"Showing **{len(df_filtered)} datapoints** for **{time_range}** | "
+            f"Showing **{len(df_filtered)} datapoints** ({time_range}) | "
             f"💨 Avg Speed: **{avg_speed} kts** | 💨 Max Gust: **{max_gust} kts**"
-            f"{temp_stats}"
+            f"{temp_stats} | ⬆️ *Arrows point in the direction the wind is blowing.*"
         )
 
         # 3. Create 3 Subplots: Speed (Top), Direction (Middle), Temperature (Bottom)
@@ -85,34 +87,48 @@ if os.path.exists(CSV_FILE):
             shared_xaxes=True,
             vertical_spacing=0.08,
             subplot_titles=(
-                "Wind Speed & Gusts (Knots)",
+                "Wind Speed & Gusts (Knots) with Wind Vectors",
                 "Wind Direction (Degrees & Cardinal)",
                 "Temperature (°C)" if has_temp else None
             ),
             row_heights=[0.45, 0.30, 0.25] if has_temp else [0.65, 0.35]
         )
 
-        # Subplot 1: Wind Speed & Gusts
+        # Subplot 1: Speed Line + Rotated Wind Arrow Markers
         fig.add_trace(go.Scatter(
-            x=df_filtered["timestamp"], y=df_filtered["velocita_knots"],
-            mode="lines+markers", name="Velocità",
+            x=df_filtered["timestamp"], 
+            y=df_filtered["velocita_knots"],
+            mode="lines+markers", 
+            name="Velocità & Direction Arrow",
             line=dict(color="#0284c7", width=2.5),
-            marker=dict(size=4),
-            hovertemplate="<b>Speed:</b> %{y:.2f} kts<extra></extra>"
+            marker=dict(
+                symbol="arrow-up",
+                angle=df_filtered["arrow_angle"],  # Rotates the arrow to match wind vector
+                size=12,
+                color="#0369a1",
+                line=dict(color="#ffffff", width=1)
+            ),
+            customdata=df_filtered[["direzione_cardinal", "direzione_deg"]],
+            hovertemplate="<b>Speed:</b> %{y:.2f} kts<br><b>Wind from:</b> %{customdata[0]} (%{customdata[1]}°)<extra></extra>"
         ), row=1, col=1)
 
+        # Subplot 1: Gusts
         fig.add_trace(go.Scatter(
-            x=df_filtered["timestamp"], y=df_filtered["raffica_knots"],
-            mode="lines+markers", name="Raffica",
+            x=df_filtered["timestamp"], 
+            y=df_filtered["raffica_knots"],
+            mode="lines+markers", 
+            name="Raffica (Gust)",
             line=dict(color="#f97316", width=2, dash="dot"),
-            marker=dict(symbol="square", size=4),
+            marker=dict(symbol="circle", size=4),
             hovertemplate="<b>Gust:</b> %{y:.2f} kts<extra></extra>"
         ), row=1, col=1)
 
-        # Subplot 2: Wind Direction
+        # Subplot 2: Wind Direction Plot
         fig.add_trace(go.Scatter(
-            x=df_filtered["timestamp"], y=df_filtered["direzione_deg"],
-            mode="markers+lines", name="Direction",
+            x=df_filtered["timestamp"], 
+            y=df_filtered["direzione_deg"],
+            mode="markers+lines", 
+            name="Direction",
             marker=dict(color="#10b981", size=6),
             line=dict(color="#10b981", dash="dot", width=1),
             customdata=df_filtered["direzione_cardinal"],
@@ -122,8 +138,10 @@ if os.path.exists(CSV_FILE):
         # Subplot 3: Temperature (Bottom)
         if has_temp:
             fig.add_trace(go.Scatter(
-                x=df_filtered["timestamp"], y=df_filtered["temperatura_c"],
-                mode="lines+markers", name="Temperatura",
+                x=df_filtered["timestamp"], 
+                y=df_filtered["temperatura_c"],
+                mode="lines+markers", 
+                name="Temperatura",
                 line=dict(color="#ef4444", width=2),
                 marker=dict(size=4),
                 hovertemplate="<b>Temp:</b> %{y:.1f} °C<extra></extra>"
@@ -150,7 +168,7 @@ if os.path.exists(CSV_FILE):
 
         st.plotly_chart(fig, use_container_width=True)
 
-        # 4. Filtered Raw Data Log
+        # Filtered Log
         with st.expander(f"📋 View Data Log ({time_range})"):
             st.dataframe(
                 df_filtered.sort_values("timestamp", ascending=False),
