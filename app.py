@@ -15,25 +15,32 @@ st.set_page_config(
 
 CSV_FILE = "porto_pollo_wind_history.csv"
 
-# Continuous Windguru-Style Color Scale for the Fading Gradient
+# Function to convert Knots to continuous Beaufort Scale Force
+def knots_to_bft(knots):
+    if pd.isna(knots):
+        return np.nan
+    # Empirical relation: v = 1.625 * Bft^(3/2) => Bft = (v / 1.625)^(2/3)
+    return np.power(np.maximum(0, knots) / 1.625, 2.0 / 3.0)
+
+# Continuous Beaufort Color Scale for Area Fills (0 to 8+ Bft)
 # White -> Blue -> Green -> Yellow -> Purple -> Red
 WIND_COLORSCALE_GUST = [
-    [0.00, "rgba(255, 255, 255, 0.25)"],  # Soft White / Mist
-    [0.18, "rgba(56, 189, 248, 0.30)"],   # Cyan / Light Blue
-    [0.32, "rgba(37, 99, 235, 0.35)"],    # Deep Blue
-    [0.45, "rgba(34, 197, 94, 0.40)"],    # Green
-    [0.60, "rgba(234, 179, 8, 0.45)"],    # Warm Yellow
-    [0.78, "rgba(168, 85, 247, 0.50)"],   # Vivid Purple
-    [1.00, "rgba(239, 68, 68, 0.55)"]     # Bright Red
+    [0.00, "rgba(255, 255, 255, 0.25)"],  # 0-1 Bft: Calm / Light
+    [0.22, "rgba(56, 189, 248, 0.30)"],   # 2-3 Bft: Light/Gentle Breeze
+    [0.40, "rgba(37, 99, 235, 0.35)"],    # 4 Bft: Moderate Breeze (11-16 kts)
+    [0.55, "rgba(34, 197, 94, 0.40)"],    # 5 Bft: Fresh Breeze (17-21 kts - Kiting zone)
+    [0.70, "rgba(234, 179, 8, 0.45)"],    # 6 Bft: Strong Breeze (22-27 kts)
+    [0.85, "rgba(168, 85, 247, 0.50)"],   # 7 Bft: Near Gale (28-33 kts)
+    [1.00, "rgba(239, 68, 68, 0.55)"]     # 8+ Bft: Gale / Storm (34+ kts)
 ]
 
 WIND_COLORSCALE_SPEED = [
     [0.00, "rgba(255, 255, 255, 0.50)"],
-    [0.18, "rgba(56, 189, 248, 0.55)"],
-    [0.32, "rgba(37, 99, 235, 0.60)"],
-    [0.45, "rgba(34, 197, 94, 0.65)"],
-    [0.60, "rgba(234, 179, 8, 0.70)"],
-    [0.78, "rgba(168, 85, 247, 0.75)"],
+    [0.22, "rgba(56, 189, 248, 0.55)"],
+    [0.40, "rgba(37, 99, 235, 0.60)"],
+    [0.55, "rgba(34, 197, 94, 0.65)"],
+    [0.70, "rgba(234, 179, 8, 0.70)"],
+    [0.85, "rgba(168, 85, 247, 0.75)"],
     [1.00, "rgba(239, 68, 68, 0.80)"]
 ]
 
@@ -42,17 +49,17 @@ def get_wg_badge(val):
     if pd.isna(val):
         return "#94a3b8", "#ffffff"
     if val < 7:
-        return "#f1f5f9", "#0f172a"  # White/slate
+        return "#f1f5f9", "#0f172a"
     elif val < 14:
-        return "#38bdf8", "#0f172a"  # Blue
+        return "#38bdf8", "#0f172a"
     elif val < 20:
-        return "#4ade80", "#0f172a"  # Green
+        return "#4ade80", "#0f172a"
     elif val < 27:
-        return "#facc15", "#0f172a"  # Yellow
+        return "#facc15", "#0f172a"
     elif val < 35:
-        return "#c084fc", "#ffffff"  # Purple
+        return "#c084fc", "#ffffff"
     else:
-        return "#f87171", "#ffffff"  # Red
+        return "#f87171", "#ffffff"
 
 st.markdown("""
     <style>
@@ -85,7 +92,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🪁 Porto Pollo (Sardinia) – Live Wind Station")
-st.caption("Real-time weather station monitor with gradient fill for speed & gusts (*Scroll wheel to zoom, drag to pan horizontally*).")
+st.caption("Real-time weather station monitor with **Beaufort Scale (Bft)** Y-axis (*Scroll wheel to zoom, drag to pan horizontally*).")
 
 if os.path.exists(CSV_FILE):
     df = pd.read_csv(CSV_FILE, on_bad_lines="skip")
@@ -101,8 +108,9 @@ if os.path.exists(CSV_FILE):
             st.stop()
 
         latest = df.iloc[-1]
+        latest_bft = knots_to_bft(latest['velocita_knots'])
 
-        # 1. Windguru Style Top Status Cards
+        # 1. Top Status Cards
         speed_bg, speed_fg = get_wg_badge(latest['velocita_knots'])
         gust_bg, gust_fg = get_wg_badge(latest['raffica_knots'])
         temp_val = latest.get("temperatura_c")
@@ -110,14 +118,14 @@ if os.path.exists(CSV_FILE):
         c1, c2, c3, c4, c5 = st.columns(5)
         with c1:
             st.markdown(f"""<div class="wg-card">
-                <div class="wg-card-title">💨 Wind Speed</div>
+                <div class="wg-card-title">💨 Live Wind (Bft / Knots)</div>
                 <div class="wg-card-val" style="color: {speed_fg}; background:{speed_bg}; border-radius:4px; padding:2px;">
-                    {latest['velocita_knots']:.1f} <span style="font-size:0.9rem;">kts</span>
+                    {latest_bft:.1f} <span style="font-size:0.9rem;">Bft</span> <span style="font-size:0.85rem; font-weight:normal;">({latest['velocita_knots']:.1f} kts)</span>
                 </div>
             </div>""", unsafe_allow_html=True)
         with c2:
             st.markdown(f"""<div class="wg-card">
-                <div class="wg-card-title">💨 Wind Gust</div>
+                <div class="wg-card-title">💨 Live Gust (Knots)</div>
                 <div class="wg-card-val" style="color: {gust_fg}; background:{gust_bg}; border-radius:4px; padding:2px;">
                     {latest['raffica_knots']:.1f} <span style="font-size:0.9rem;">kts</span>
                 </div>
@@ -180,6 +188,10 @@ if os.path.exists(CSV_FILE):
 
         has_temp = "temperatura_c" in df_filtered.columns and df_filtered["temperatura_c"].notnull().any()
 
+        # Calculate Beaufort Scale Columns
+        df_filtered["velocita_bft"] = knots_to_bft(df_filtered["velocita_knots"])
+        df_filtered["raffica_bft"] = knots_to_bft(df_filtered["raffica_knots"])
+
         # Arrow data source
         df_for_arrows = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
         df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
@@ -197,6 +209,8 @@ if os.path.exists(CSV_FILE):
                     "timestamp": prev_time + pd.Timedelta(seconds=1),
                     "velocita_knots": np.nan,
                     "raffica_knots": np.nan,
+                    "velocita_bft": np.nan,
+                    "raffica_bft": np.nan,
                     "temperatura_c": np.nan,
                     "direzione_deg": np.nan,
                     "direzione_cardinal": None
@@ -205,17 +219,17 @@ if os.path.exists(CSV_FILE):
         else:
             df_plot_lines = df_plot.copy()
 
-        # High-Density Interpolation for Smooth Color Gradient Fill (both Speed & Gusts)
+        # High-Density Interpolation for Smooth Color Gradient Fill in Beaufort
         fill_segments = []
         seg_start = 0
         gap_pos = list(gap_indices) + [len(df_plot)]
         for g_pos in gap_pos:
             seg = df_plot.iloc[seg_start:g_pos]
             if len(seg) >= 2:
-                seg_resampled = seg.set_index("timestamp")[["velocita_knots", "raffica_knots"]].resample("1min").interpolate(method="time").reset_index()
+                seg_resampled = seg.set_index("timestamp")[["velocita_bft", "raffica_bft", "velocita_knots", "raffica_knots"]].resample("1min").interpolate(method="time").reset_index()
                 fill_segments.append(seg_resampled)
             elif len(seg) == 1:
-                fill_segments.append(seg[["timestamp", "velocita_knots", "raffica_knots"]])
+                fill_segments.append(seg[["timestamp", "velocita_bft", "raffica_bft", "velocita_knots", "raffica_knots"]])
             seg_start = g_pos
 
         df_gradient_fill = pd.concat(fill_segments, ignore_index=True) if fill_segments else df_plot.copy()
@@ -227,25 +241,25 @@ if os.path.exists(CSV_FILE):
             shared_xaxes=True,
             vertical_spacing=0.035,
             subplot_titles=(
-                "<b>Wind speed and gusts (knots)</b>",
+                "<b>Wind speed and gusts (Beaufort Scale / Knots)</b>",
                 "<b>Wind direction</b>",
                 "<b>Temperature (°C) – 🟡 Daytime (06-19h) | 🔵 Nighttime (19-06h)</b>" if has_temp else None
             ),
             row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
         )
 
-        bar_width_ms = 60 * 1000  # 1 minute bar width for seamless gradient rendering
+        bar_width_ms = 60 * 1000  # 1 minute
 
-        # --- SUBPLOT 1: GRADIENT FILLS + BLACK SPEED & GUST LINES ---
-        # 1. Gust Color Fill Area (Behind)
+        # --- SUBPLOT 1: BEAUFORT GRADIENT FILLS + BLACK SPEED & GUST LINES ---
+        # 1. Gust Color Fill Area (Beaufort Height)
         fig.add_trace(go.Bar(
             x=df_gradient_fill["timestamp"],
-            y=df_gradient_fill["raffica_knots"],
+            y=df_gradient_fill["raffica_bft"],
             marker=dict(
-                color=df_gradient_fill["raffica_knots"],
+                color=df_gradient_fill["raffica_bft"],
                 colorscale=WIND_COLORSCALE_GUST,
                 cmin=0,
-                cmax=40,
+                cmax=8,
                 line=dict(width=0)
             ),
             width=bar_width_ms,
@@ -254,15 +268,15 @@ if os.path.exists(CSV_FILE):
             name="Gust Gradient Fill"
         ), row=1, col=1)
 
-        # 2. Sustained Speed Color Fill Area (In Front)
+        # 2. Sustained Speed Color Fill Area (Beaufort Height)
         fig.add_trace(go.Bar(
             x=df_gradient_fill["timestamp"],
-            y=df_gradient_fill["velocita_knots"],
+            y=df_gradient_fill["velocita_bft"],
             marker=dict(
-                color=df_gradient_fill["velocita_knots"],
+                color=df_gradient_fill["velocita_bft"],
                 colorscale=WIND_COLORSCALE_SPEED,
                 cmin=0,
-                cmax=40,
+                cmax=8,
                 line=dict(width=0)
             ),
             width=bar_width_ms,
@@ -271,28 +285,30 @@ if os.path.exists(CSV_FILE):
             name="Speed Gradient Fill"
         ), row=1, col=1)
 
-        # 3. Gust Trace (Dotted Black Outline with Black Markers)
+        # 3. Gust Trace in Beaufort (Dotted Black Outline with Black Markers)
         fig.add_trace(go.Scatter(
             x=df_plot_lines["timestamp"],
-            y=df_plot_lines["raffica_knots"],
+            y=df_plot_lines["raffica_bft"],
+            customdata=df_plot_lines["raffica_knots"],
             mode="lines+markers",
             name="Gust (Raffica)",
             connectgaps=False,
             line=dict(color="#0f172a", width=1.6, dash="dot"),
             marker=dict(symbol="circle", size=4.5, color="#0f172a"),
-            hovertemplate="<b>Gust:</b> %{y:.1f} kts<extra></extra>"
+            hovertemplate="<b>Gust:</b> %{y:.1f} Bft (%{customdata:.1f} kts)<extra></extra>"
         ), row=1, col=1)
 
-        # 4. Sustained Wind Speed Line (Solid Black Contour)
+        # 4. Sustained Wind Speed Line in Beaufort (Solid Black Contour)
         fig.add_trace(go.Scatter(
             x=df_plot_lines["timestamp"],
-            y=df_plot_lines["velocita_knots"],
+            y=df_plot_lines["velocita_bft"],
+            customdata=df_plot_lines["velocita_knots"],
             mode="lines+markers",
             name="Wind Speed (Avg)",
             connectgaps=False,
             line=dict(color="#0f172a", width=2.2),
             marker=dict(size=4, color="#0f172a"),
-            hovertemplate="<b>Speed:</b> %{y:.1f} kts<extra></extra>"
+            hovertemplate="<b>Speed:</b> %{y:.1f} Bft (%{customdata:.1f} kts)<extra></extra>"
         ), row=1, col=1)
 
         # --- SUBPLOT 2: DIRECTION (0-360° with clean grid & arrows) ---
@@ -303,11 +319,11 @@ if os.path.exists(CSV_FILE):
             name="Direction",
             connectgaps=False,
             marker=dict(symbol="circle", size=3.5, color="#64748b"),
-            customdata=df_plot_lines[["direzione_cardinal", "velocita_knots"]],
-            hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[1]:.1f} kts<extra></extra>"
+            customdata=df_plot_lines[["direzione_cardinal", "velocita_knots", "velocita_bft"]],
+            hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
         ), row=2, col=1)
 
-        # Adaptive Arrow Placement (>20 deg shift = instant; steady = spaced)
+        # Adaptive Arrow Placement
         steady_step = max(3, len(df_for_arrows) // 25)
         selected_indices = []
         if not df_for_arrows.empty:
@@ -409,14 +425,32 @@ if os.path.exists(CSV_FILE):
                     )
                 curr_day += pd.Timedelta(days=1)
 
-        # --- GRID & AXES STYLING ---
+        # --- BEAUFORT SCALE Y-AXIS FORMATTING ---
+        # Dynamically set top limit based on maximum gust observed
+        max_bft = max(7.5, df_plot_lines["raffica_bft"].dropna().max() + 0.6 if not df_plot_lines["raffica_bft"].dropna().empty else 7.5)
+
         fig.update_yaxes(
-            title_text="Knots",
+            title_text="<b>Beaufort Force (Bft)</b>",
+            range=[0, max_bft],
+            tickvals=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            ticktext=[
+                "0 Bft (Calm)",
+                "1 Bft (Light Air)",
+                "2 Bft (Light)",
+                "3 Bft (Gentle)",
+                "4 Bft (Moderate)",
+                "5 Bft (Fresh)",
+                "6 Bft (Strong)",
+                "7 Bft (Near Gale)",
+                "8 Bft (Gale)",
+                "9 Bft (Strong Gale)"
+            ],
             row=1, col=1,
             gridcolor="#e2e8f0",
             zerolinecolor="#cbd5e1",
             fixedrange=True
         )
+
         fig.update_yaxes(
             title_text="Direction",
             range=[-35, 395],
