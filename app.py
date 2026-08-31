@@ -25,7 +25,7 @@ if os.path.exists(CSV_FILE):
         
         latest = df.iloc[-1]
         
-        # 1. Top Live KPI Cards
+        # 1. Top Live KPI Cards (Always current latest reading)
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Velocità (Live Speed)", f"{latest['velocita_knots']} kts")
         col2.metric("Raffica (Live Gusts)", f"{latest['raffica_knots']} kts")
@@ -36,8 +36,8 @@ if os.path.exists(CSV_FILE):
 
         st.divider()
 
-        # 2. Time-Range Filter Bar
-        col_filter, col_spacer = st.columns([2, 3])
+        # 2. Time-Range & Daytime Filter Bar
+        col_filter, col_daytime = st.columns([3, 1])
         with col_filter:
             time_range = st.radio(
                 "Select Time Window:",
@@ -45,6 +45,9 @@ if os.path.exists(CSV_FILE):
                 index=1,
                 horizontal=True
             )
+        with col_daytime:
+            st.write("")  # Alignment spacer
+            daytime_only = st.checkbox("☀️ Daytime Only (06:00 – 19:00)", value=False)
 
         # Apply Time-Range Filtering
         now = df["timestamp"].max()
@@ -59,7 +62,12 @@ if os.path.exists(CSV_FILE):
         else:
             df_filtered = df.copy()
 
+        # Apply Daytime (06:00 to 19:00) Filter
+        if daytime_only:
+            df_filtered = df_filtered[df_filtered["timestamp"].dt.hour.between(6, 18)]
+
         if df_filtered.empty:
+            st.warning("No data points available for the selected filters. Showing all recent records.")
             df_filtered = df.copy()
 
         # Calculate blowing direction angle (meteorological: from + 180 = blowing to)
@@ -75,8 +83,9 @@ if os.path.exists(CSV_FILE):
             max_temp = round(df_filtered["temperatura_c"].max(), 1)
             temp_stats = f" | 🌡️ Temp: **{min_temp}°C - {max_temp}°C**"
 
+        daytime_label = " (06:00–19:00)" if daytime_only else ""
         st.caption(
-            f"Showing **{len(df_filtered)} datapoints** ({time_range}) | "
+            f"Showing **{len(df_filtered)} datapoints** ({time_range}{daytime_label}) | "
             f"💨 Avg Speed: **{avg_speed} kts** | 💨 Max Gust: **{max_gust} kts**"
             f"{temp_stats} | 🧭 *Arrow Color: 🟢 **≥18 kts (Go)** | 🔴 **<18 kts (Light)**.*"
         )
@@ -128,11 +137,11 @@ if os.path.exists(CSV_FILE):
             hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y}°)<br><b>Speed:</b> %{customdata[1]:.2f} kts<extra></extra>"
         ), row=2, col=1)
 
-        # Slimmer Arrow Corpus with Preserved Stem Length in Subplot 2
+        # Slim Vector Arrows in Subplot 2
         step = max(1, len(df_filtered) // 35)
         df_sub = df_filtered.iloc[::step]
 
-        arrow_length_px = 52  # Preserved stem length
+        arrow_length_px = 52
 
         for _, row_data in df_sub.iterrows():
             angle_deg = row_data["arrow_angle"]
@@ -159,8 +168,8 @@ if os.path.exists(CSV_FILE):
                 ayref="pixel",
                 showarrow=True,
                 arrowhead=2,
-                arrowsize=1.6,   # Slimmer arrowhead
-                arrowwidth=2.0,  # Slimmer stem
+                arrowsize=1.1,
+                arrowwidth=2.0,
                 arrowcolor=arrow_color,
                 opacity=0.95
             )
@@ -199,7 +208,7 @@ if os.path.exists(CSV_FILE):
         st.plotly_chart(fig, use_container_width=True)
 
         # Filtered Log Table
-        with st.expander(f"📋 View Data Log ({time_range})"):
+        with st.expander(f"📋 View Data Log ({time_range}{daytime_label})"):
             st.dataframe(
                 df_filtered.sort_values("timestamp", ascending=False),
                 use_container_width=True
