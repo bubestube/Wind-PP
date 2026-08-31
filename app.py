@@ -192,7 +192,7 @@ if os.path.exists(CSV_FILE):
                 ayref="pixel",
                 showarrow=True,
                 arrowhead=2,
-                arrowsize=1.1,
+                arrowsize=1.6,
                 arrowwidth=2.0,
                 arrowcolor=arrow_color,
                 opacity=0.95
