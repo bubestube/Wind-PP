@@ -165,47 +165,42 @@ if os.path.exists(CSV_FILE):
         df_for_arrows = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
         df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
-        # Gap Disconnectors with baseline grounding to prevent horizontal fill bleeding
+        # Create Gap Disconnectors for Lines (Clean NaN breaks with NO zero drop)
         df_plot = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
         time_diffs = df_plot["timestamp"].diff()
         gap_indices = df_plot[time_diffs > pd.Timedelta(minutes=30)].index
 
+        # Clean NaN break dataframe for line traces
         if len(gap_indices) > 0:
-            inserted_rows = []
+            nan_rows = []
             for idx in gap_indices:
                 prev_time = df_plot.loc[idx - 1, "timestamp"]
-                curr_time = df_plot.loc[idx, "timestamp"]
-                
-                # 1. Bring area down to zero at end of day
-                r_ground_end = pd.DataFrame([{
+                nan_rows.append(pd.DataFrame([{
                     "timestamp": prev_time + pd.Timedelta(seconds=1),
-                    "velocita_knots": 0.0,
-                    "raffica_knots": np.nan,
-                    "temperatura_c": np.nan,
-                    "direzione_deg": np.nan,
-                    "direzione_cardinal": None
-                }])
-                # 2. Hard NaN gap to break the SVG polygon
-                r_nan = pd.DataFrame([{
-                    "timestamp": prev_time + pd.Timedelta(seconds=2),
                     "velocita_knots": np.nan,
                     "raffica_knots": np.nan,
                     "temperatura_c": np.nan,
                     "direzione_deg": np.nan,
                     "direzione_cardinal": None
-                }])
-                # 3. Ground at zero right before morning reading
-                r_ground_start = pd.DataFrame([{
-                    "timestamp": curr_time - pd.Timedelta(seconds=1),
-                    "velocita_knots": 0.0,
-                    "raffica_knots": np.nan,
-                    "temperatura_c": np.nan,
-                    "direzione_deg": np.nan,
-                    "direzione_cardinal": None
-                }])
-                inserted_rows.extend([r_ground_end, r_nan, r_ground_start])
-                
-            df_plot = pd.concat([df_plot] + inserted_rows).sort_values("timestamp").reset_index(drop=True)
+                }]))
+            df_plot_lines = pd.concat([df_plot] + nan_rows).sort_values("timestamp").reset_index(drop=True)
+        else:
+            df_plot_lines = df_plot.copy()
+
+        # Dedicated dataframe for Fill Area (grounds area to 0 without drawing a visible line)
+        if len(gap_indices) > 0:
+            fill_rows = []
+            for idx in gap_indices:
+                prev_time = df_plot.loc[idx - 1, "timestamp"]
+                curr_time = df_plot.loc[idx, "timestamp"]
+                fill_rows.extend([
+                    pd.DataFrame([{"timestamp": prev_time + pd.Timedelta(seconds=1), "velocita_knots": 0.0}]),
+                    pd.DataFrame([{"timestamp": prev_time + pd.Timedelta(seconds=2), "velocita_knots": np.nan}]),
+                    pd.DataFrame([{"timestamp": curr_time - pd.Timedelta(seconds=1), "velocita_knots": 0.0}])
+                ])
+            df_plot_fill = pd.concat([df_plot] + fill_rows).sort_values("timestamp").reset_index(drop=True)
+        else:
+            df_plot_fill = df_plot.copy()
 
         # 3. Build Windguru Multi-Panel Chart
         fig = make_subplots(
@@ -222,10 +217,23 @@ if os.path.exists(CSV_FILE):
         )
 
         # --- SUBPLOT 1: WIND SPEED & GUSTS ---
-        # Gusts: Red / Orange points + subtle connecting dashed line
+        # 1. Fill Area ONLY (Zero width border, perfectly grounded)
         fig.add_trace(go.Scatter(
-            x=df_plot["timestamp"],
-            y=df_plot["raffica_knots"],
+            x=df_plot_fill["timestamp"],
+            y=df_plot_fill["velocita_knots"],
+            mode="lines",
+            fill="tozeroy",
+            fillcolor="rgba(2, 132, 199, 0.12)",
+            line=dict(width=0),  # No border line drawn for the fill
+            hoverinfo="skip",
+            showlegend=False,
+            connectgaps=False
+        ), row=1, col=1)
+
+        # 2. Gust Trace (Dotted Orange/Red with markers)
+        fig.add_trace(go.Scatter(
+            x=df_plot_lines["timestamp"],
+            y=df_plot_lines["raffica_knots"],
             mode="lines+markers",
             name="Gust (Raffica)",
             connectgaps=False,
@@ -234,14 +242,12 @@ if os.path.exists(CSV_FILE):
             hovertemplate="<b>Gust:</b> %{y:.1f} kts<extra></extra>"
         ), row=1, col=1)
 
-        # Sustained Speed: Deep Windguru Blue Line + Soft Cyan Area Fill (Clean non-connecting gaps)
+        # 3. Wind Speed Line ONLY (No fill attached, stops cleanly at actual value at 19:00)
         fig.add_trace(go.Scatter(
-            x=df_plot["timestamp"],
-            y=df_plot["velocita_knots"],
+            x=df_plot_lines["timestamp"],
+            y=df_plot_lines["velocita_knots"],
             mode="lines+markers",
             name="Wind Speed (Avg)",
-            fill="tozeroy",
-            fillcolor="rgba(2, 132, 199, 0.12)",
             connectgaps=False,
             line=dict(color="#0284c7", width=2.2),
             marker=dict(size=4, color="#0369a1"),
@@ -250,13 +256,13 @@ if os.path.exists(CSV_FILE):
 
         # --- SUBPLOT 2: DIRECTION (0-360° with clean grid & arrows) ---
         fig.add_trace(go.Scatter(
-            x=df_plot["timestamp"],
-            y=df_plot["direzione_deg"],
+            x=df_plot_lines["timestamp"],
+            y=df_plot_lines["direzione_deg"],
             mode="markers",
             name="Direction",
             connectgaps=False,
             marker=dict(symbol="circle", size=3.5, color="#64748b"),
-            customdata=df_plot[["direzione_cardinal", "velocita_knots"]],
+            customdata=df_plot_lines[["direzione_cardinal", "velocita_knots"]],
             hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[1]:.1f} kts<extra></extra>"
         ), row=2, col=1)
 
@@ -315,13 +321,13 @@ if os.path.exists(CSV_FILE):
 
         # --- SUBPLOT 3: TEMPERATURE STRIP (Yellow for Day, Dark Blue for Night) ---
         if has_temp:
-            is_day = df_plot["timestamp"].dt.hour.between(6, 18)
-            temp_day = df_plot["temperatura_c"].where(is_day, np.nan)
-            temp_night = df_plot["temperatura_c"].where(~is_day, np.nan)
+            is_day = df_plot_lines["timestamp"].dt.hour.between(6, 18)
+            temp_day = df_plot_lines["temperatura_c"].where(is_day, np.nan)
+            temp_night = df_plot_lines["temperatura_c"].where(~is_day, np.nan)
 
             # Daytime Trace (Warm Yellow / Gold)
             fig.add_trace(go.Scatter(
-                x=df_plot["timestamp"],
+                x=df_plot_lines["timestamp"],
                 y=temp_day,
                 mode="lines+markers",
                 name="Temp (Day: 06-19h)",
@@ -334,7 +340,7 @@ if os.path.exists(CSV_FILE):
             # Nighttime Trace (Dark Blue)
             if not daytime_only:
                 fig.add_trace(go.Scatter(
-                    x=df_plot["timestamp"],
+                    x=df_plot_lines["timestamp"],
                     y=temp_night,
                     mode="lines+markers",
                     name="Temp (Night: 19-06h)",
@@ -347,9 +353,9 @@ if os.path.exists(CSV_FILE):
             fig.update_yaxes(title_text="°C", row=3, col=1, gridcolor="#e2e8f0", fixedrange=True)
 
         # --- WINDGURU VERTICAL DAY/NIGHT SHADING ---
-        if not daytime_only and not df_plot.empty:
-            t_min = df_plot["timestamp"].min()
-            t_max = df_plot["timestamp"].max()
+        if not daytime_only and not df_plot_lines.empty:
+            t_min = df_plot_lines["timestamp"].min()
+            t_max = df_plot_lines["timestamp"].max()
             curr_day = t_min.floor("D")
             while curr_day <= t_max:
                 night_start = curr_day + pd.Timedelta(hours=19)
