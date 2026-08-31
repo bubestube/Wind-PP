@@ -165,25 +165,47 @@ if os.path.exists(CSV_FILE):
         df_for_arrows = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
         df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
-        # Gap Disconnectors for Night and >30m Outages
-        df_plot = df_filtered.copy().sort_values("timestamp")
+        # Gap Disconnectors with baseline grounding to prevent horizontal fill bleeding
+        df_plot = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
         time_diffs = df_plot["timestamp"].diff()
         gap_indices = df_plot[time_diffs > pd.Timedelta(minutes=30)].index
 
         if len(gap_indices) > 0:
-            nan_rows = []
+            inserted_rows = []
             for idx in gap_indices:
-                prev_time = df_plot.loc[df_plot.index[df_plot.index.get_loc(idx) - 1], "timestamp"]
-                nan_row = pd.DataFrame([{
-                    "timestamp": prev_time + pd.Timedelta(minutes=1),
+                prev_time = df_plot.loc[idx - 1, "timestamp"]
+                curr_time = df_plot.loc[idx, "timestamp"]
+                
+                # 1. Bring area down to zero at end of day
+                r_ground_end = pd.DataFrame([{
+                    "timestamp": prev_time + pd.Timedelta(seconds=1),
+                    "velocita_knots": 0.0,
+                    "raffica_knots": np.nan,
+                    "temperatura_c": np.nan,
+                    "direzione_deg": np.nan,
+                    "direzione_cardinal": None
+                }])
+                # 2. Hard NaN gap to break the SVG polygon
+                r_nan = pd.DataFrame([{
+                    "timestamp": prev_time + pd.Timedelta(seconds=2),
                     "velocita_knots": np.nan,
                     "raffica_knots": np.nan,
                     "temperatura_c": np.nan,
                     "direzione_deg": np.nan,
                     "direzione_cardinal": None
                 }])
-                nan_rows.append(nan_row)
-            df_plot = pd.concat([df_plot] + nan_rows).sort_values("timestamp").reset_index(drop=True)
+                # 3. Ground at zero right before morning reading
+                r_ground_start = pd.DataFrame([{
+                    "timestamp": curr_time - pd.Timedelta(seconds=1),
+                    "velocita_knots": 0.0,
+                    "raffica_knots": np.nan,
+                    "temperatura_c": np.nan,
+                    "direzione_deg": np.nan,
+                    "direzione_cardinal": None
+                }])
+                inserted_rows.extend([r_ground_end, r_nan, r_ground_start])
+                
+            df_plot = pd.concat([df_plot] + inserted_rows).sort_values("timestamp").reset_index(drop=True)
 
         # 3. Build Windguru Multi-Panel Chart
         fig = make_subplots(
@@ -212,7 +234,7 @@ if os.path.exists(CSV_FILE):
             hovertemplate="<b>Gust:</b> %{y:.1f} kts<extra></extra>"
         ), row=1, col=1)
 
-        # Sustained Speed: Deep Windguru Blue Line + Soft Cyan Area Fill
+        # Sustained Speed: Deep Windguru Blue Line + Soft Cyan Area Fill (Clean non-connecting gaps)
         fig.add_trace(go.Scatter(
             x=df_plot["timestamp"],
             y=df_plot["velocita_knots"],
@@ -268,7 +290,6 @@ if os.path.exists(CSV_FILE):
             if pd.isna(angle_deg) or pd.isna(row_data["direzione_deg"]):
                 continue
 
-            # Windguru color coding: Red if light (<18 kts), Green if good (>=18 kts)
             arrow_color = "#16a34a" if (pd.notnull(speed_val) and speed_val >= 18.0) else "#dc2626"
 
             rad = math.radians(angle_deg)
