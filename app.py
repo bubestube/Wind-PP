@@ -36,14 +36,16 @@ def bft_to_stretched(bft_val):
         return np.nan
     return math.pow(max(0.0, float(bft_val)), BFT_EXP)
 
-# Convert meteorological angle (0=N, 90=E, 180=S, 270=W) to 8-point Unicode Arrow
-def deg_to_unicode_arrow(deg):
+# True Meteorological Wind Arrow (Points in the direction the wind is blowing TO)
+def deg_to_wind_arrow(deg):
     if pd.isna(deg):
         return ""
-    # Angle where the wind is blowing towards
-    to_angle = (float(deg) + 180) % 360
+    # 0° (North wind -> blows South) = ↓
+    # 90° (East wind -> blows West)   = ←
+    # 180° (South wind -> blows North) = ↑
+    # 270° (West wind -> blows East)  = →
     arrows = ["↓", "↙", "←", "↖", "↑", "↗", "→", "↘"]
-    idx = int((to_angle + 22.5) // 45) % 8
+    idx = int(((float(deg) % 360) + 22.5) // 45) % 8
     return arrows[idx]
 
 # Continuous Beaufort Color Scale for Area Fills (0 to 8+ Bft)
@@ -115,7 +117,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🪁 Porto Pollo (Sardinia) – Live Wind Station")
-st.caption("Real-time weather station monitor with **Stretched Beaufort Scale & Wind Vector Indicators** (*Scroll wheel to zoom, drag to pan horizontally*).")
+st.caption("Real-time weather station monitor with **Stretched Beaufort Scale & Wind Direction Vectors** (*Scroll wheel to zoom, drag to pan horizontally*).")
 
 if os.path.exists(CSV_FILE):
     df = pd.read_csv(CSV_FILE, on_bad_lines="skip")
@@ -246,7 +248,7 @@ if os.path.exists(CSV_FILE):
         else:
             df_plot_lines = df_plot.copy()
 
-        # --- Dynamic Text Labels for Sustained Speed (with Black Direction Arrow beneath) ---
+        # --- Dynamic Text Labels for Sustained Speed (Number on top, correctly oriented arrow below) ---
         speed_labels = [""] * len(df_plot_lines)
         if not df_plot_lines.empty:
             valid_speed_indices = df_plot_lines[df_plot_lines["velocita_knots"].notnull()].index.tolist()
@@ -254,8 +256,8 @@ if os.path.exists(CSV_FILE):
                 first_i = valid_speed_indices[0]
                 val0 = df_plot_lines.loc[first_i, 'velocita_knots']
                 deg0 = df_plot_lines.loc[first_i, 'direzione_deg']
-                arrow0 = deg_to_unicode_arrow(deg0)
-                speed_labels[first_i] = f"{val0:.1f}<br><span style='font-size:11px;'>{arrow0}</span>"
+                arrow0 = deg_to_wind_arrow(deg0)
+                speed_labels[first_i] = f"{val0:.1f}<br><span style='font-size:12px;'>{arrow0}</span>"
                 
                 last_speed_val = val0
                 last_speed_idx = first_i
@@ -269,9 +271,8 @@ if os.path.exists(CSV_FILE):
                     pts_since = idx - last_speed_idx
 
                     if delta_kts >= 1.0 or pts_since >= fallback_step:
-                        curr_arrow = deg_to_unicode_arrow(curr_deg)
-                        # Speed number on top line, crisp black arrow on the line below
-                        speed_labels[idx] = f"{curr_val:.1f}<br><span style='font-size:11px;'>{curr_arrow}</span>"
+                        curr_arrow = deg_to_wind_arrow(curr_deg)
+                        speed_labels[idx] = f"{curr_val:.1f}<br><span style='font-size:12px;'>{curr_arrow}</span>"
                         last_speed_val = curr_val
                         last_speed_idx = idx
 
@@ -383,7 +384,7 @@ if os.path.exists(CSV_FILE):
             hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
         ), row=1, col=1)
 
-        # 4. Sustained Wind Speed Line with Speed Labels + Arrow BELOW (bottom center)
+        # 4. Sustained Wind Speed Line with Speed Labels + Correct Arrow BELOW (bottom center)
         fig.add_trace(go.Scatter(
             x=df_plot_lines["timestamp"],
             y=df_plot_lines["velocita_plot_y"],
