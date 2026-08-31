@@ -105,7 +105,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🪁 Porto Pollo (Sardinia) – Live Wind Station")
-st.caption("Real-time weather station monitor with **Stretched Beaufort Scale** (*Scroll wheel to zoom, drag to pan horizontally*).")
+st.caption("Real-time weather station monitor with **Stretched Beaufort Scale & Dynamic Speed Labels** (*Scroll wheel to zoom, drag to pan horizontally*).")
 
 if os.path.exists(CSV_FILE):
     df = pd.read_csv(CSV_FILE, on_bad_lines="skip")
@@ -236,6 +236,31 @@ if os.path.exists(CSV_FILE):
         else:
             df_plot_lines = df_plot.copy()
 
+        # --- Dynamic Text Label Calculation (Placed only after >= 1.0 knot change) ---
+        text_labels = [""] * len(df_plot_lines)
+        if not df_plot_lines.empty:
+            valid_speed_indices = df_plot_lines[df_plot_lines["velocita_knots"].notnull()].index.tolist()
+            if valid_speed_indices:
+                first_i = valid_speed_indices[0]
+                text_labels[first_i] = f"{df_plot_lines.loc[first_i, 'velocita_knots']:.1f}"
+                last_labeled_val = df_plot_lines.loc[first_i, "velocita_knots"]
+                last_labeled_idx = first_i
+                
+                steady_label_fallback = max(4, len(valid_speed_indices) // 20)
+
+                for idx in valid_speed_indices[1:]:
+                    curr_val = df_plot_lines.loc[idx, "velocita_knots"]
+                    delta_kts = abs(curr_val - last_labeled_val)
+                    pts_since = idx - last_labeled_idx
+
+                    # Condition: Wind speed delta >= 1.0 kts OR fallback spacing reached
+                    if delta_kts >= 1.0 or pts_since >= steady_label_fallback:
+                        text_labels[idx] = f"{curr_val:.1f}"
+                        last_labeled_val = curr_val
+                        last_labeled_idx = idx
+
+        df_plot_lines["speed_label"] = text_labels
+
         # High-Density Interpolation for Smooth Color Gradient Fill in Beaufort
         fill_segments = []
         seg_start = 0
@@ -267,7 +292,7 @@ if os.path.exists(CSV_FILE):
 
         bar_width_ms = 60 * 1000  # 1 minute
 
-        # --- SUBPLOT 1: STRETCHED BEAUFORT GRADIENT FILLS + BLACK LINES ---
+        # --- SUBPLOT 1: STRETCHED BEAUFORT GRADIENT FILLS + BLACK LINES + LABELS ---
         # 1. Gust Color Fill Area (Stretched Y Height)
         fig.add_trace(go.Bar(
             x=df_gradient_fill["timestamp"],
@@ -315,12 +340,15 @@ if os.path.exists(CSV_FILE):
             hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
         ), row=1, col=1)
 
-        # 4. Sustained Wind Speed Line in Stretched Scale (Solid Black Line)
+        # 4. Sustained Wind Speed Line with Dynamic Numeric Labels (>= 1.0 knot shift)
         fig.add_trace(go.Scatter(
             x=df_plot_lines["timestamp"],
             y=df_plot_lines["velocita_plot_y"],
+            text=df_plot_lines["speed_label"],
+            textposition="top center",
+            textfont=dict(family="Arial, sans-serif", size=10.5, color="#0f172a"),
             customdata=np.stack((df_plot_lines["velocita_bft"], df_plot_lines["velocita_knots"]), axis=-1),
-            mode="lines+markers",
+            mode="lines+markers+text",
             name="Wind Speed (Avg)",
             connectgaps=False,
             line=dict(color="#0f172a", width=2.2),
@@ -459,7 +487,7 @@ if os.path.exists(CSV_FILE):
         ]
 
         max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
-        top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.08)
+        top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.12)
 
         fig.update_yaxes(
             title_text="<b>Beaufort Force (Stretched)</b>",
