@@ -23,10 +23,14 @@ if os.path.exists(CSV_FILE):
     if not df.empty and "timestamp" in df.columns:
         df["timestamp"] = pd.to_datetime(df["timestamp"])
         df = df.drop_duplicates(subset=["timestamp"]).sort_values("timestamp")
-
-        # ⬇️ ADD THIS LINE HERE ⬇️
+        
+        # Hard start cutoff
         df = df[df["timestamp"] >= "2026-08-27 13:41:00"]
         
+        if df.empty:
+            st.info("No data points after August 27, 2026 13:41 yet.")
+            st.stop()
+            
         latest = df.iloc[-1]
         
         # 1. Top Live KPI Cards (Always current latest reading)
@@ -74,7 +78,7 @@ if os.path.exists(CSV_FILE):
             st.warning("No data points available for the selected filters. Showing all recent records.")
             df_filtered = df.copy()
 
-        # Summary Metrics (Calculated before adding NaN gap markers)
+        # Summary Metrics
         avg_speed = round(df_filtered["velocita_knots"].mean(), 1)
         max_gust = round(df_filtered["raffica_knots"].max(), 1)
         has_temp = "temperatura_c" in df_filtered.columns and df_filtered["temperatura_c"].notnull().any()
@@ -91,11 +95,11 @@ if os.path.exists(CSV_FILE):
             f"{temp_stats} | 🧭 *Arrow Color: 🟢 **≥18 kts (Go)** | 🔴 **<18 kts (Light)**.*"
         )
 
-        # Vector Arrow Data Source (Keep clean copy before NaN insertion)
-        df_for_arrows = df_filtered.copy()
+        # Vector Arrow Data Source
+        df_for_arrows = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
         df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
-        # Insert NaN rows wherever time difference between records > 30 minutes to cleanly break lines
+        # Insert NaN rows for line breaks across >30min gaps
         df_plot = df_filtered.copy().sort_values("timestamp")
         time_diffs = df_plot["timestamp"].diff()
         gap_indices = df_plot[time_diffs > pd.Timedelta(minutes=30)].index
@@ -115,7 +119,7 @@ if os.path.exists(CSV_FILE):
                 nan_rows.append(nan_row)
             df_plot = pd.concat([df_plot] + nan_rows).sort_values("timestamp").reset_index(drop=True)
 
-        # 3. Create 3 Subplots: Speed (Top), Direction (Middle), Temperature (Bottom)
+        # 3. Subplots
         fig = make_subplots(
             rows=3 if has_temp else 2, 
             cols=1,
@@ -165,10 +169,21 @@ if os.path.exists(CSV_FILE):
             hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y}°)<br><b>Speed:</b> %{customdata[1]:.2f} kts<extra></extra>"
         ), row=2, col=1)
 
-        # Slim Vector Arrows in Subplot 2
-        step = max(1, len(df_for_arrows) // 35)
-        df_sub = df_for_arrows.iloc[::step]
+        # Dynamic Arrow Step Calculation
+        deg_series = df_for_arrows["direzione_deg"].fillna(0)
+        deg_diff = (deg_series.diff().fillna(0) + 180) % 360 - 180
+        avg_angular_volatility = deg_diff.abs().rolling(window=5, min_periods=1).mean()
 
+        base_step = max(1, len(df_for_arrows) // 35)
+        selected_indices = []
+        i = 0
+        while i < len(df_for_arrows):
+            selected_indices.append(i)
+            volatility = avg_angular_volatility.iloc[i]
+            step = int(base_step * 1.8) if volatility > 25 else base_step
+            i += max(1, step)
+
+        df_sub = df_for_arrows.iloc[selected_indices]
         arrow_length_px = 52
 
         for _, row_data in df_sub.iterrows():
@@ -195,19 +210,18 @@ if os.path.exists(CSV_FILE):
                 ayref="pixel",
                 showarrow=True,
                 arrowhead=2,
-                arrowsize=1.6,
+                arrowsize=1.1,
                 arrowwidth=2.0,
                 arrowcolor=arrow_color,
                 opacity=0.95
             )
 
-        # Subplot 3: Temperature (Yellow for Day, Dark Blue for Night)
+        # Subplot 3: Temperature
         if has_temp:
             is_day = df_plot["timestamp"].dt.hour.between(6, 18)
             temp_day = df_plot["temperatura_c"].where(is_day, np.nan)
             temp_night = df_plot["temperatura_c"].where(~is_day, np.nan)
 
-            # Daytime Temperature Trace (Yellow / Gold)
             fig.add_trace(go.Scatter(
                 x=df_plot["timestamp"], 
                 y=temp_day,
@@ -219,7 +233,6 @@ if os.path.exists(CSV_FILE):
                 hovertemplate="<b>Temp (Day):</b> %{y:.1f} °C<extra></extra>"
             ), row=3, col=1)
 
-            # Nighttime Temperature Trace (Dark Blue)
             if not daytime_only:
                 fig.add_trace(go.Scatter(
                     x=df_plot["timestamp"], 
