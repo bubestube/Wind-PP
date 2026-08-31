@@ -94,23 +94,64 @@ if os.path.exists(CSV_FILE):
             row_heights=[0.45, 0.30, 0.25] if has_temp else [0.65, 0.35]
         )
 
-        # Subplot 1: Speed Line + Large Wide-Bodied Arrows
+        # 1. Subplot 1: Clean Speed & Gust Lines
         fig.add_trace(go.Scatter(
             x=df_filtered["timestamp"], 
             y=df_filtered["velocita_knots"],
             mode="lines+markers", 
-            name="Velocità & Direction",
-            line=dict(color="#0284c7", width=2),
-            marker=dict(
-                symbol="arrow-up",
-                angle=df_filtered["arrow_angle"],
-                size=18,                       # ⬅️ Large footprint
-                color="#f59e0b",               # ⬅️ Vivid Amber
-                line=dict(color="#1e1b4b", width=1.8)  # ⬅️ Thick border
-            ),
+            name="Velocità",
+            line=dict(color="#0284c7", width=2.5),
+            marker=dict(size=5, color="#0284c7"),
             customdata=df_filtered[["direzione_cardinal", "direzione_deg"]],
             hovertemplate="<b>Speed:</b> %{y:.2f} kts<br><b>Wind from:</b> %{customdata[0]} (%{customdata[1]}°)<extra></extra>"
         ), row=1, col=1)
+
+        fig.add_trace(go.Scatter(
+            x=df_filtered["timestamp"], 
+            y=df_filtered["raffica_knots"],
+            mode="lines+markers", 
+            name="Raffica (Gust)",
+            line=dict(color="#f97316", width=2, dash="dot"),
+            marker=dict(symbol="circle", size=4),
+            hovertemplate="<b>Gust:</b> %{y:.2f} kts<extra></extra>"
+        ), row=1, col=1)
+
+        # 2. Add True Vector Arrows (Stem + Arrowhead) via Annotations
+        import math
+
+        # Thin out points slightly if looking at long timeframes (e.g. >100 points) to avoid overcrowding
+        step = max(1, len(df_filtered) // 50)
+        df_sub = df_filtered.iloc[::step]
+
+        arrow_length_px = 22  # Length of the stem + arrowhead
+
+        for _, row_data in df_sub.iterrows():
+            angle_deg = row_data["arrow_angle"]
+            if pd.isna(angle_deg):
+                continue
+            
+            # Convert angle to radians (0 deg = North/Up, 90 deg = East/Right)
+            rad = math.radians(angle_deg)
+            # Vector displacement in pixels
+            dx = arrow_length_px * math.sin(rad)
+            dy = arrow_length_px * math.cos(rad)
+
+            fig.add_annotation(
+                x=row_data["timestamp"],
+                y=row_data["velocita_knots"],
+                xref="x1",
+                yref="y1",
+                ax=-dx,           # Tail X offset
+                ay=dy,            # Tail Y offset (inverted for screen coords)
+                axref="pixel",
+                ayref="pixel",
+                showarrow=True,
+                arrowhead=2,      # 2 = Solid wide arrowhead
+                arrowsize=1.4,    # Size of the barb
+                arrowwidth=2.5,   # Thickness of the stem
+                arrowcolor="#e11d48",  # Bold crimson/red so it pops distinctly
+                opacity=0.9
+            )
 
         # Subplot 1: Gusts
         fig.add_trace(go.Scatter(
