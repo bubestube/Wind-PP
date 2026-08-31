@@ -169,27 +169,32 @@ if os.path.exists(CSV_FILE):
             hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y}°)<br><b>Speed:</b> %{customdata[1]:.2f} kts<extra></extra>"
         ), row=2, col=1)
 
-        # High-Frequency Adaptive Arrow Calculation
-        deg_series = df_for_arrows["direzione_deg"].fillna(0)
-        deg_diff = (deg_series.diff().fillna(0) + 180) % 360 - 180
-        avg_angular_volatility = deg_diff.abs().rolling(window=3, min_periods=1).mean()
-
-        base_step = max(1, len(df_for_arrows) // 30)
+        # --- Adaptive Arrow Selection: Direct Angular Delta ---
+        # Base fallback distance for steady wind (e.g. at most 1 arrow every 5-8 points)
+        steady_step = max(3, len(df_for_arrows) // 25)
+        
         selected_indices = []
-        i = 0
-        while i < len(df_for_arrows):
-            selected_indices.append(i)
-            volatility = avg_angular_volatility.iloc[i]
-            
-            # Increase frequency as volatility increases
-            if volatility > 25:
-                step = 1  # Show every point
-            elif volatility > 15:
-                step = max(1, base_step // 2)
-            else:
-                step = base_step
+        if not df_for_arrows.empty:
+            selected_indices.append(0)
+            last_idx = 0
+            last_deg = df_for_arrows.loc[0, "direzione_deg"]
+
+            for i in range(1, len(df_for_arrows)):
+                curr_deg = df_for_arrows.loc[i, "direzione_deg"]
                 
-            i += max(1, step)
+                if pd.isna(curr_deg):
+                    continue
+                
+                # Compute absolute angular shift (shortest path on 360 circle)
+                delta_deg = abs((curr_deg - last_deg + 180) % 360 - 180)
+                points_since_last = i - last_idx
+
+                # Condition 1: Wind shifted significantly (>= 15 degrees) -> Show arrow
+                # Condition 2: Wind is steady, but reached the fallback interval -> Show arrow
+                if delta_deg >= 15.0 or points_since_last >= steady_step:
+                    selected_indices.append(i)
+                    last_idx = i
+                    last_deg = curr_deg
 
         df_sub = df_for_arrows.iloc[selected_indices]
         arrow_length_px = 52
