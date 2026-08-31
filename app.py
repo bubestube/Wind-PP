@@ -33,13 +33,18 @@ def bft_to_stretched(bft_val):
         return np.nan
     return math.pow(max(0.0, float(bft_val)), BFT_EXP)
 
-# True Meteorological Wind Arrow
+# Uniform Heavy/Bold Wind Direction Arrows (Consistent weight across all 8 cardinal & diagonal angles)
 def deg_to_wind_arrow(deg):
     if pd.isna(deg):
         return ""
-    arrows = ["↓", "↙", "←", "↖", "↑", "↗", "→", "↘"]
+    # True meteorological wind direction: points TO where wind is blowing
+    # 0° (North wind -> blows South) = ⬇
+    # 90° (East wind -> blows West)   = ⬅
+    # 180° (South wind -> blows North) = ⬆
+    # 270° (West wind -> blows East)  = ➡
+    heavy_arrows = ["⬇", "⬋", "⬅", "⬉", "⬆", "⬈", "➡", "⬊"]
     idx = int(((float(deg) % 360) + 22.5) // 45) % 8
-    return arrows[idx]
+    return heavy_arrows[idx]
 
 # Continuous Beaufort Color Scale for Area Fills (0 to 8+ Bft)
 WIND_COLORSCALE_GUST = [
@@ -230,7 +235,7 @@ if df is not None and not df.empty:
     else:
         df_plot_lines = df_plot.copy()
 
-    # Dynamic Labels & Wind Direction Vectors (Bigger & Bolder Arrows)
+    # Dynamic Labels & Uniformly Bold Wind Direction Vectors
     speed_labels = [""] * len(df_plot_lines)
     gust_labels = [""] * len(df_plot_lines)
 
@@ -242,7 +247,7 @@ if df is not None and not df.empty:
         v0 = df_plot_lines.loc[f_idx, 'velocita_knots']
         d0 = df_plot_lines.loc[f_idx, 'direzione_deg']
         a0 = deg_to_wind_arrow(d0)
-        speed_labels[f_idx] = f"{v0:.1f}<br><b style='font-size:15px; line-height:1.2;'>{a0}</b>"
+        speed_labels[f_idx] = f"{v0:.1f}<br><span style='font-size:15px; font-weight:bold; line-height:1.2;'>{a0}</span>"
 
         last_s_val = v0
         last_s_idx = f_idx
@@ -263,8 +268,8 @@ if df is not None and not df.empty:
 
             if (delta_s >= 1.0 and pts_since_s >= 2) or pts_since_s >= 8:
                 arrow = deg_to_wind_arrow(curr_d)
-                # Bolder and larger (15px) direction arrow beneath wind speed
-                speed_labels[idx] = f"{curr_v:.1f}<br><b style='font-size:15px; line-height:1.2;'>{arrow}</b>"
+                # Uniform bold styling applied to all directions
+                speed_labels[idx] = f"{curr_v:.1f}<br><span style='font-size:15px; font-weight:bold; line-height:1.2;'>{arrow}</span>"
                 last_s_val = curr_v
                 last_s_idx = idx
 
@@ -387,7 +392,7 @@ if df is not None and not df.empty:
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=2, col=1)
 
-    # --- SUBPLOT 2: Restored Rotating Vector Wind Arrows (Green >= 18kts, Red < 18kts) ---
+    # Subplot 2: Compass Vector Arrows
     df_for_arrows = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
@@ -524,7 +529,7 @@ if df is not None and not df.empty:
         fixedrange=True
     )
 
-    # 5. Default 6h Initial Viewport Window
+    # Default 6h Initial Viewport Window
     t_end_view = df_plot_lines["timestamp"].max()
     t_start_data = df_plot_lines["timestamp"].min()
 
@@ -565,7 +570,7 @@ if df is not None and not df.empty:
         margin=dict(l=35, r=20, t=50, b=30)
     )
 
-    # 6. Render Chart
+    # Render Chart
     st.plotly_chart(
         fig,
         use_container_width=True,
