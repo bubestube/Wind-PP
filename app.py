@@ -15,26 +15,35 @@ st.set_page_config(
 
 CSV_FILE = "porto_pollo_wind_history.csv"
 
+# Continuous Windguru-Style Color Scale for the Fading Gradient
+# White -> Blue -> Green -> Yellow -> Purple -> Red
+WIND_COLORSCALE = [
+    [0.00, "rgba(255, 255, 255, 0.45)"],  # 0 kts: Soft White / Mist
+    [0.18, "rgba(56, 189, 248, 0.50)"],   # 7 kts: Cyan / Light Blue
+    [0.32, "rgba(37, 99, 235, 0.55)"],    # 13 kts: Deep Blue
+    [0.45, "rgba(34, 197, 94, 0.60)"],    # 18 kts: Green (Planing / Kite entry)
+    [0.60, "rgba(234, 179, 8, 0.65)"],    # 24 kts: Warm Yellow
+    [0.78, "rgba(168, 85, 247, 0.70)"],   # 31 kts: Vivid Purple
+    [1.00, "rgba(239, 68, 68, 0.75)"]     # 40+ kts: Bright Red
+]
+
 # Windguru Metric Badge Helper
-def get_wg_badge(val, is_speed=True):
+def get_wg_badge(val):
     if pd.isna(val):
         return "#94a3b8", "#ffffff"
-    if val < 11:
-        return "#93c5fd", "#0f172a"  # Light blue
-    elif val < 16:
-        return "#38bdf8", "#0f172a"  # Cyan
-    elif val < 21:
+    if val < 7:
+        return "#f1f5f9", "#0f172a"  # White/slate
+    elif val < 14:
+        return "#38bdf8", "#0f172a"  # Blue
+    elif val < 20:
         return "#4ade80", "#0f172a"  # Green
-    elif val < 26:
+    elif val < 27:
         return "#facc15", "#0f172a"  # Yellow
-    elif val < 32:
-        return "#fb923c", "#ffffff"  # Orange
-    elif val < 40:
-        return "#f87171", "#ffffff"  # Red
-    else:
+    elif val < 35:
         return "#c084fc", "#ffffff"  # Purple
+    else:
+        return "#f87171", "#ffffff"  # Red
 
-# Windguru Light Theme Typography
 st.markdown("""
     <style>
     .stApp {
@@ -66,7 +75,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🪁 Porto Pollo (Sardinia) – Live Wind Station")
-st.caption("Real-time weather station monitor styled after **Windguru Live Station** (*Scroll wheel to zoom, drag to pan horizontally*).")
+st.caption("Real-time weather station monitor with dynamic speed-faded color fills (*Scroll wheel to zoom, drag to pan horizontally*).")
 
 if os.path.exists(CSV_FILE):
     df = pd.read_csv(CSV_FILE, on_bad_lines="skip")
@@ -165,12 +174,11 @@ if os.path.exists(CSV_FILE):
         df_for_arrows = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
         df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
-        # Create Gap Disconnectors for Lines (Clean NaN breaks with NO zero drop)
+        # Gap Disconnectors for Lines (Clean NaN breaks)
         df_plot = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
         time_diffs = df_plot["timestamp"].diff()
         gap_indices = df_plot[time_diffs > pd.Timedelta(minutes=30)].index
 
-        # Clean NaN break dataframe for line traces
         if len(gap_indices) > 0:
             nan_rows = []
             for idx in gap_indices:
@@ -187,22 +195,24 @@ if os.path.exists(CSV_FILE):
         else:
             df_plot_lines = df_plot.copy()
 
-        # Dedicated dataframe for Fill Area (grounds area to 0 without drawing a visible line)
-        if len(gap_indices) > 0:
-            fill_rows = []
-            for idx in gap_indices:
-                prev_time = df_plot.loc[idx - 1, "timestamp"]
-                curr_time = df_plot.loc[idx, "timestamp"]
-                fill_rows.extend([
-                    pd.DataFrame([{"timestamp": prev_time + pd.Timedelta(seconds=1), "velocita_knots": 0.0}]),
-                    pd.DataFrame([{"timestamp": prev_time + pd.Timedelta(seconds=2), "velocita_knots": np.nan}]),
-                    pd.DataFrame([{"timestamp": curr_time - pd.Timedelta(seconds=1), "velocita_knots": 0.0}])
-                ])
-            df_plot_fill = pd.concat([df_plot] + fill_rows).sort_values("timestamp").reset_index(drop=True)
-        else:
-            df_plot_fill = df_plot.copy()
+        # 3. High-Density Interpolation for Smooth Color Gradient Fill
+        # We resample valid data segments to smooth transitions without crossing overnight breaks
+        fill_segments = []
+        seg_start = 0
+        gap_pos = list(gap_indices) + [len(df_plot)]
+        for g_pos in gap_pos:
+            seg = df_plot.iloc[seg_start:g_pos]
+            if len(seg) >= 2:
+                # Interpolate to 1-minute resolution for seamless color blending
+                seg_resampled = seg.set_index("timestamp")[["velocita_knots"]].resample("1min").interpolate(method="time").reset_index()
+                fill_segments.append(seg_resampled)
+            elif len(seg) == 1:
+                fill_segments.append(seg[["timestamp", "velocita_knots"]])
+            seg_start = g_pos
 
-        # 3. Build Windguru Multi-Panel Chart
+        df_gradient_fill = pd.concat(fill_segments, ignore_index=True) if fill_segments else df_plot.copy()
+
+        # 4. Build Multi-Panel Chart
         fig = make_subplots(
             rows=3 if has_temp else 2,
             cols=1,
@@ -216,41 +226,48 @@ if os.path.exists(CSV_FILE):
             row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
         )
 
-        # --- SUBPLOT 1: WIND SPEED & GUSTS ---
-        # 1. Fill Area ONLY (Zero width border, perfectly grounded)
-        fig.add_trace(go.Scatter(
-            x=df_plot_fill["timestamp"],
-            y=df_plot_fill["velocita_knots"],
-            mode="lines",
-            fill="tozeroy",
-            fillcolor="rgba(2, 132, 199, 0.12)",
-            line=dict(width=0),  # No border line drawn for the fill
+        # --- SUBPLOT 1: GRADIENT COLOR FILL + SPEED & GUST LINES ---
+        # 1. Smoothly Fading Color Gradient Fill Area
+        # Compute bar width in milliseconds matching sampling frequency
+        bar_width_ms = 60 * 1000  # 1 minute
+
+        fig.add_trace(go.Bar(
+            x=df_gradient_fill["timestamp"],
+            y=df_gradient_fill["velocita_knots"],
+            marker=dict(
+                color=df_gradient_fill["velocita_knots"],
+                colorscale=WIND_COLORSCALE,
+                cmin=0,
+                cmax=40,
+                line=dict(width=0)
+            ),
+            width=bar_width_ms,
             hoverinfo="skip",
             showlegend=False,
-            connectgaps=False
+            name="Gradient Fill"
         ), row=1, col=1)
 
-        # 2. Gust Trace (Dotted Orange/Red with markers)
+        # 2. Gust Trace (Dotted Red/Orange)
         fig.add_trace(go.Scatter(
             x=df_plot_lines["timestamp"],
             y=df_plot_lines["raffica_knots"],
             mode="lines+markers",
             name="Gust (Raffica)",
             connectgaps=False,
-            line=dict(color="rgba(220, 38, 38, 0.55)", width=1.5, dash="dot"),
+            line=dict(color="rgba(220, 38, 38, 0.65)", width=1.6, dash="dot"),
             marker=dict(symbol="circle", size=4.5, color="#dc2626"),
             hovertemplate="<b>Gust:</b> %{y:.1f} kts<extra></extra>"
         ), row=1, col=1)
 
-        # 3. Wind Speed Line ONLY (No fill attached, stops cleanly at actual value at 19:00)
+        # 3. Sustained Wind Speed Line (Solid Blue Contour)
         fig.add_trace(go.Scatter(
             x=df_plot_lines["timestamp"],
             y=df_plot_lines["velocita_knots"],
             mode="lines+markers",
             name="Wind Speed (Avg)",
             connectgaps=False,
-            line=dict(color="#0284c7", width=2.2),
-            marker=dict(size=4, color="#0369a1"),
+            line=dict(color="#0369a1", width=2.2),
+            marker=dict(size=4, color="#0284c7"),
             hovertemplate="<b>Speed:</b> %{y:.1f} kts<extra></extra>"
         ), row=1, col=1)
 
@@ -325,7 +342,6 @@ if os.path.exists(CSV_FILE):
             temp_day = df_plot_lines["temperatura_c"].where(is_day, np.nan)
             temp_night = df_plot_lines["temperatura_c"].where(~is_day, np.nan)
 
-            # Daytime Trace (Warm Yellow / Gold)
             fig.add_trace(go.Scatter(
                 x=df_plot_lines["timestamp"],
                 y=temp_day,
@@ -337,7 +353,6 @@ if os.path.exists(CSV_FILE):
                 hovertemplate="<b>Temp (Day):</b> %{y:.1f} °C<extra></extra>"
             ), row=3, col=1)
 
-            # Nighttime Trace (Dark Blue)
             if not daytime_only:
                 fig.add_trace(go.Scatter(
                     x=df_plot_lines["timestamp"],
@@ -352,7 +367,7 @@ if os.path.exists(CSV_FILE):
 
             fig.update_yaxes(title_text="°C", row=3, col=1, gridcolor="#e2e8f0", fixedrange=True)
 
-        # --- WINDGURU VERTICAL DAY/NIGHT SHADING ---
+        # --- VERTICAL DAY/NIGHT SHADING ---
         if not daytime_only and not df_plot_lines.empty:
             t_min = df_plot_lines["timestamp"].min()
             t_max = df_plot_lines["timestamp"].max()
@@ -370,7 +385,7 @@ if os.path.exists(CSV_FILE):
                     )
                 curr_day += pd.Timedelta(days=1)
 
-        # --- WINDGURU GRID & AXES STYLING ---
+        # --- GRID & AXES STYLING ---
         fig.update_yaxes(
             title_text="Knots",
             row=1, col=1,
@@ -396,6 +411,8 @@ if os.path.exists(CSV_FILE):
             height=780 if has_temp else 600,
             paper_bgcolor="#ffffff",
             plot_bgcolor="#ffffff",
+            bargap=0,              # Ensures bars touch continuously to form a smooth area
+            barmode="overlay",
             font=dict(color="#1e293b", family="Arial, sans-serif"),
             dragmode="pan",
             hovermode="x unified",
@@ -410,7 +427,7 @@ if os.path.exists(CSV_FILE):
             margin=dict(l=35, r=20, t=50, b=30)
         )
 
-        # 4. Render Chart with Zoom & Pan
+        # 5. Render Chart with Zoom & Pan
         st.plotly_chart(
             fig,
             use_container_width=True,
