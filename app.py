@@ -1,13 +1,11 @@
 import datetime
 import math
 import os
-import json
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
-import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title="Porto Pollo – Windguru Live Station",
@@ -35,14 +33,15 @@ def bft_to_stretched(bft_val):
         return np.nan
     return math.pow(max(0.0, float(bft_val)), BFT_EXP)
 
+# Continuous Beaufort Color Scale for Area Fills (0 to 8+ Bft)
 WIND_COLORSCALE_GUST = [
-    [0.00, "rgba(255, 255, 255, 0.25)"],
-    [0.22, "rgba(56, 189, 248, 0.30)"],
-    [0.40, "rgba(37, 99, 235, 0.35)"],
-    [0.55, "rgba(34, 197, 94, 0.40)"],
-    [0.70, "rgba(234, 179, 8, 0.45)"],
-    [0.85, "rgba(168, 85, 247, 0.50)"],
-    [1.00, "rgba(239, 68, 68, 0.55)"]
+    [0.00, "rgba(255, 255, 255, 0.25)"],  # 0-1 Bft: Calm / Light
+    [0.22, "rgba(56, 189, 248, 0.30)"],   # 2-3 Bft: Light/Gentle Breeze
+    [0.40, "rgba(37, 99, 235, 0.35)"],    # 4 Bft: Moderate Breeze
+    [0.55, "rgba(34, 197, 94, 0.40)"],    # 5 Bft: Fresh Breeze
+    [0.70, "rgba(234, 179, 8, 0.45)"],    # 6 Bft: Strong Breeze
+    [0.85, "rgba(168, 85, 247, 0.50)"],   # 7 Bft: Near Gale
+    [1.00, "rgba(239, 68, 68, 0.55)"]     # 8+ Bft: Gale / Storm
 ]
 
 WIND_COLORSCALE_SPEED = [
@@ -102,9 +101,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🪁 Porto Pollo (Sardinia) – Live Wind Station")
-st.caption("Live streaming monitor with **Client-Side Progressive Infinite Pan & Zoom** (*Seamless drag without page reloads*).")
+st.caption("Real-time weather station monitor with **Continuous Angulation Wind Vectors & Gradient Fill** (*Scroll wheel to zoom, drag to pan horizontally*).")
 
-# 1. Fast Cached CSV Loader
+# 1. Cached Data Loader
 @st.cache_data(ttl=60, show_spinner=False)
 def load_all_records(csv_path):
     if not os.path.exists(csv_path):
@@ -125,16 +124,15 @@ def load_all_records(csv_path):
         df["raffica_plot_y"] = bft_to_stretched(df["raffica_bft"])
         df["arrow_angle"] = (df["direzione_deg"].fillna(0) + 180) % 360
         return df
-    except Exception:
+    except Exception as e:
+        st.error(f"Error loading CSV data: {e}")
         return None
 
-df_all = load_all_records(CSV_FILE)
+df = load_all_records(CSV_FILE)
 
-if df_all is not None and not df_all.empty:
-    latest = df_all.iloc[-1]
+if df is not None and not df.empty:
+    latest = df.iloc[-1]
     latest_bft = latest['velocita_bft']
-    t_global_max = df_all["timestamp"].max()
-    t_global_min = df_all["timestamp"].min()
 
     # 2. KPI Cards
     speed_bg, speed_fg = get_wg_badge(latest['velocita_knots'])
@@ -180,22 +178,118 @@ if df_all is not None and not df_all.empty:
 
     st.write("")
 
-    has_temp = "temperatura_c" in df_all.columns and df_all["temperatura_c"].notnull().any()
+    # 3. Viewport Presets & Daytime Filter
+    col_preset, col_daytime = st.columns([3, 1])
+    with col_preset:
+        time_preset = st.radio(
+            "Initial Viewport Range:",
+            options=["Last 6 Hours (Default)", "Last 24 Hours", "Last 3 Days", "Last 7 Days", "Fit All History"],
+            index=0,
+            horizontal=True
+        )
+    with col_daytime:
+        st.write("")
+        daytime_only = st.checkbox("☀️ Daytime Only (06:00 – 19:00)", value=False)
 
-    # Initial 6-Hour Time Window for the first canvas render
-    v_end = t_global_max
-    v_start = max(t_global_min, v_end - pd.Timedelta(hours=6))
+    df_filtered = df.copy()
+    if daytime_only:
+        df_filtered = df_filtered[df_filtered["timestamp"].dt.hour.between(6, 18)].copy()
 
-    # Static Axis Limits & Formatting
-    bft_ticks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-    bft_stretched_vals = [bft_to_stretched(b) for b in bft_ticks]
-    bft_labels = [
-        "0 Bft", "1 Bft", "2 Bft", "3 Bft (Gentle)", "4 Bft (Moderate)",
-        "5 Bft (Fresh)", "6 Bft (Strong)", "7 Bft (Near Gale)", "8 Bft (Gale)", "9 Bft (Storm)"
-    ]
-    max_observed_y = df_all["raffica_plot_y"].dropna().max() if not df_all["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
-    top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
+    if df_filtered.empty:
+        st.warning("No records found.")
+        df_filtered = df.copy()
 
+    has_temp = "temperatura_c" in df_filtered.columns and df_filtered["temperatura_c"].notnull().any()
+
+    # Gap Disconnectors
+    df_plot = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
+    time_diffs = df_plot["timestamp"].diff()
+    gap_indices = df_plot[time_diffs > pd.Timedelta(minutes=45)].index
+
+    if len(gap_indices) > 0:
+        nan_rows = []
+        for idx in gap_indices:
+            prev_time = df_plot.loc[idx - 1, "timestamp"]
+            nan_rows.append(pd.DataFrame([{
+                "timestamp": prev_time + pd.Timedelta(seconds=1),
+                "velocita_knots": np.nan,
+                "raffica_knots": np.nan,
+                "velocita_bft": np.nan,
+                "raffica_bft": np.nan,
+                "velocita_plot_y": np.nan,
+                "raffica_plot_y": np.nan,
+                "temperatura_c": np.nan,
+                "direzione_deg": np.nan,
+                "direzione_cardinal": None
+            }]))
+        df_plot_lines = pd.concat([df_plot] + nan_rows).sort_values("timestamp").reset_index(drop=True)
+    else:
+        df_plot_lines = df_plot.copy()
+
+    # Dynamic Labels & Vector Points Registry
+    speed_labels = [""] * len(df_plot_lines)
+    gust_labels = [""] * len(df_plot_lines)
+    labeled_speed_points = []
+
+    valid_mask = df_plot_lines["velocita_knots"].notnull()
+    valid_indices = df_plot_lines.index[valid_mask].tolist()
+
+    if valid_indices:
+        f_idx = valid_indices[0]
+        v0 = df_plot_lines.loc[f_idx, 'velocita_knots']
+        d0 = df_plot_lines.loc[f_idx, 'direzione_deg']
+        speed_labels[f_idx] = f"{v0:.1f}"
+        labeled_speed_points.append({
+            "timestamp": df_plot_lines.loc[f_idx, 'timestamp'],
+            "velocita_plot_y": df_plot_lines.loc[f_idx, 'velocita_plot_y'],
+            "direzione_deg": d0
+        })
+
+        last_s_val = v0
+        last_s_idx = f_idx
+        last_g_val = df_plot_lines.loc[f_idx, 'raffica_knots'] if pd.notnull(df_plot_lines.loc[f_idx, 'raffica_knots']) else -999.0
+        last_g_idx = f_idx
+
+        v_arr = df_plot_lines["velocita_knots"].to_numpy()
+        r_arr = df_plot_lines["raffica_knots"].to_numpy()
+        d_arr = df_plot_lines["direzione_deg"].to_numpy()
+        y_arr = df_plot_lines["velocita_plot_y"].to_numpy()
+        t_arr = df_plot_lines["timestamp"].to_numpy()
+
+        for idx in valid_indices[1:]:
+            curr_v = v_arr[idx]
+            curr_d = d_arr[idx]
+            curr_g = r_arr[idx]
+
+            delta_s = abs(curr_v - last_s_val)
+            pts_since_s = idx - last_s_idx
+
+            if (delta_s >= 1.0 and pts_since_s >= 2) or pts_since_s >= 8:
+                speed_labels[idx] = f"{curr_v:.1f}"
+                labeled_speed_points.append({
+                    "timestamp": t_arr[idx],
+                    "velocita_plot_y": y_arr[idx],
+                    "direzione_deg": curr_d
+                })
+                last_s_val = curr_v
+                last_s_idx = idx
+
+            if pd.notnull(curr_g):
+                delta_g = abs(curr_g - last_g_val)
+                pts_since_g = idx - last_g_idx
+                if (delta_g >= 1.0 and pts_since_g >= 2) or pts_since_g >= 8:
+                    gust_labels[idx] = f"{curr_g:.1f}"
+                    last_g_val = curr_g
+                    last_g_idx = idx
+
+    df_plot_lines["speed_label"] = speed_labels
+    df_plot_lines["gust_label"] = gust_labels
+
+    # Direct gradient mapping
+    df_gradient_fill = df_plot.copy()
+    bar_width_ms = 2 * 60 * 1000
+
+    # 4. Build Multi-Panel Subplots
     fig = make_subplots(
         rows=3 if has_temp else 2,
         cols=1,
@@ -209,63 +303,228 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # Empty Traces Initialized - JavaScript will fill data dynamically
-    # Trace 0: Gust Bar Fill
+    # Subplot 1: Gust Gradient Fill Area
     fig.add_trace(go.Bar(
-        x=[], y=[],
-        marker=dict(colorscale=WIND_COLORSCALE_GUST, cmin=0, cmax=8, line=dict(width=0)),
-        width=2 * 60 * 1000, hoverinfo="skip", showlegend=False
+        x=df_gradient_fill["timestamp"],
+        y=df_gradient_fill["raffica_plot_y"],
+        marker=dict(
+            color=df_gradient_fill["raffica_bft"],
+            colorscale=WIND_COLORSCALE_GUST,
+            cmin=0,
+            cmax=8,
+            line=dict(width=0)
+        ),
+        width=bar_width_ms,
+        hoverinfo="skip",
+        showlegend=False,
+        name="Gust Gradient Fill"
     ), row=1, col=1)
 
-    # Trace 1: Speed Bar Fill
+    # Subplot 1: Sustained Speed Gradient Fill Area
     fig.add_trace(go.Bar(
-        x=[], y=[],
-        marker=dict(colorscale=WIND_COLORSCALE_SPEED, cmin=0, cmax=8, line=dict(width=0)),
-        width=2 * 60 * 1000, hoverinfo="skip", showlegend=False
+        x=df_gradient_fill["timestamp"],
+        y=df_gradient_fill["velocita_plot_y"],
+        marker=dict(
+            color=df_gradient_fill["velocita_bft"],
+            colorscale=WIND_COLORSCALE_SPEED,
+            cmin=0,
+            cmax=8,
+            line=dict(width=0)
+        ),
+        width=bar_width_ms,
+        hoverinfo="skip",
+        showlegend=False,
+        name="Speed Gradient Fill"
     ), row=1, col=1)
 
-    # Trace 2: Gust Line
+    # Subplot 1: Gust Trace
     fig.add_trace(go.Scatter(
-        x=[], y=[], mode="lines+markers+text", name="Gust (Raffica)",
-        textposition="top center", textfont=dict(family="Arial, sans-serif", size=10.0, color="#b91c1c"),
-        connectgaps=False, line=dict(color="#0f172a", width=1.6, dash="dot"),
+        x=df_plot_lines["timestamp"],
+        y=df_plot_lines["raffica_plot_y"],
+        text=df_plot_lines["gust_label"],
+        textposition="top center",
+        textfont=dict(family="Arial, sans-serif", size=10.0, color="#b91c1c"),
+        customdata=np.stack((df_plot_lines["raffica_bft"], df_plot_lines["raffica_knots"]), axis=-1),
+        mode="lines+markers+text",
+        name="Gust (Raffica)",
+        connectgaps=False,
+        line=dict(color="#0f172a", width=1.6, dash="dot"),
         marker=dict(symbol="circle", size=4.0, color="#0f172a"),
         hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=1, col=1)
 
-    # Trace 3: Speed Line
+    # Subplot 1: Sustained Speed Trace with Number Below
     fig.add_trace(go.Scatter(
-        x=[], y=[], mode="lines+markers+text", name="Wind Speed (Avg)",
-        textposition="bottom center", textfont=dict(family="Arial, sans-serif", size=10.0, color="#0f172a"),
-        connectgaps=False, line=dict(color="#0f172a", width=2.2),
+        x=df_plot_lines["timestamp"],
+        y=df_plot_lines["velocita_plot_y"],
+        text=df_plot_lines["speed_label"],
+        textposition="bottom center",
+        textfont=dict(family="Arial, sans-serif", size=10.0, color="#0f172a"),
+        customdata=np.stack((df_plot_lines["velocita_bft"], df_plot_lines["velocita_knots"], df_plot_lines["direzione_deg"]), axis=-1),
+        mode="lines+markers+text",
+        name="Wind Speed (Avg)",
+        connectgaps=False,
+        line=dict(color="#0f172a", width=2.2),
         marker=dict(size=4.0, color="#0f172a"),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
-    # Trace 4: Direction Markers
+    # Subplot 1: Exact Angulation Vector Arrows (Stem Length: 18px, Enlarged Arrow Head: 1.35)
+    mini_arrow_len = 18
+    for pt in labeled_speed_points:
+        deg = pt["direzione_deg"]
+        if pd.isna(deg) or pd.isna(pt["velocita_plot_y"]):
+            continue
+
+        angle_rad = math.radians((float(deg) + 180.0) % 360.0)
+        dx = mini_arrow_len * math.sin(angle_rad)
+        dy = mini_arrow_len * math.cos(angle_rad)
+
+        fig.add_annotation(
+            x=pt["timestamp"],
+            y=pt["velocita_plot_y"],
+            xref="x1",
+            yref="y1",
+            yshift=-24,
+            ax=-dx,
+            ay=dy,
+            axref="pixel",
+            ayref="pixel",
+            showarrow=True,
+            arrowhead=2,
+            arrowsize=1.35,
+            arrowwidth=1.3,
+            arrowcolor="#0f172a",
+            opacity=0.95
+        )
+
+    # Subplot 2: Direction Trace
     fig.add_trace(go.Scatter(
-        x=[], y=[], mode="markers", name="Direction", connectgaps=False,
+        x=df_plot_lines["timestamp"],
+        y=df_plot_lines["direzione_deg"],
+        mode="markers",
+        name="Direction",
+        connectgaps=False,
         marker=dict(symbol="circle", size=3.5, color="#64748b"),
+        customdata=df_plot_lines[["direzione_cardinal", "velocita_knots", "velocita_bft"]],
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=2, col=1)
 
+    # Subplot 2: Exact Rotating Vector Wind Arrows
+    df_for_arrows = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
+    df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
+
+    steady_step = max(3, len(df_for_arrows) // 40)
+    selected_indices = []
+    if not df_for_arrows.empty:
+        selected_indices.append(0)
+        last_idx = 0
+        last_deg = df_for_arrows.loc[0, "direzione_deg"]
+
+        for i in range(1, len(df_for_arrows)):
+            curr_deg = df_for_arrows.loc[i, "direzione_deg"]
+            if pd.isna(curr_deg):
+                continue
+            delta_deg = abs((curr_deg - last_deg + 180) % 360 - 180)
+            points_since_last = i - last_idx
+
+            if delta_deg > 20.0 or points_since_last >= steady_step:
+                selected_indices.append(i)
+                last_idx = i
+                last_deg = curr_deg
+
+    df_sub = df_for_arrows.iloc[selected_indices]
+    arrow_length_px = 60
+
+    for _, row_data in df_sub.iterrows():
+        angle_deg = row_data["arrow_angle"]
+        speed_val = row_data["velocita_knots"]
+
+        if pd.isna(angle_deg) or pd.isna(row_data["direzione_deg"]):
+            continue
+
+        arrow_color = "#16a34a" if (pd.notnull(speed_val) and speed_val >= 18.0) else "#dc2626"
+
+        rad = math.radians(angle_deg)
+        dx = arrow_length_px * math.sin(rad)
+        dy = arrow_length_px * math.cos(rad)
+
+        fig.add_annotation(
+            x=row_data["timestamp"],
+            y=row_data["direzione_deg"],
+            xref="x2",
+            yref="y2",
+            ax=-dx,
+            ay=dy,
+            axref="pixel",
+            ayref="pixel",
+            showarrow=True,
+            arrowhead=2,
+            arrowsize=2,
+            arrowwidth=1.5,
+            arrowcolor=arrow_color,
+            opacity=0.9
+        )
+
+    # Subplot 3: Temperature
     if has_temp:
-        # Trace 5: Daytime Temp
+        is_day = df_plot_lines["timestamp"].dt.hour.between(6, 18)
+        temp_day = df_plot_lines["temperatura_c"].where(is_day, np.nan)
+        temp_night = df_plot_lines["temperatura_c"].where(~is_day, np.nan)
+
         fig.add_trace(go.Scatter(
-            x=[], y=[], mode="lines+markers", name="Temp (Day: 06-19h)",
-            connectgaps=False, line=dict(color="#eab308", width=2.2),
+            x=df_plot_lines["timestamp"],
+            y=temp_day,
+            mode="lines+markers",
+            name="Temp (Day: 06-19h)",
+            connectgaps=False,
+            line=dict(color="#eab308", width=2.2),
             marker=dict(size=4, color="#eab308", line=dict(color="#ca8a04", width=1)),
             hovertemplate="<b>Temp (Day):</b> %{y:.1f} °C<extra></extra>"
         ), row=3, col=1)
 
-        # Trace 6: Nighttime Temp
-        fig.add_trace(go.Scatter(
-            x=[], y=[], mode="lines+markers", name="Temp (Night: 19-06h)",
-            connectgaps=False, line=dict(color="#1e3a8a", width=2.2),
-            marker=dict(size=4, color="#1e3a8a", line=dict(color="#0f172a", width=1)),
-            hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
-        ), row=3, col=1)
+        if not daytime_only:
+            fig.add_trace(go.Scatter(
+                x=df_plot_lines["timestamp"],
+                y=temp_night,
+                mode="lines+markers",
+                name="Temp (Night: 19-06h)",
+                connectgaps=False,
+                line=dict(color="#1e3a8a", width=2.2),
+                marker=dict(size=4, color="#1e3a8a", line=dict(color="#0f172a", width=1)),
+                hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
+            ), row=3, col=1)
+
         fig.update_yaxes(title_text="°C", row=3, col=1, gridcolor="#e2e8f0", fixedrange=True)
+
+    # Vertical Night Shading
+    if not daytime_only and not df_plot_lines.empty:
+        t_min_full = df_plot_lines["timestamp"].min()
+        t_max_full = df_plot_lines["timestamp"].max()
+        curr_day = t_min_full.floor("D")
+        while curr_day <= t_max_full:
+            night_start = curr_day + pd.Timedelta(hours=19)
+            night_end = curr_day + pd.Timedelta(days=1, hours=6)
+            if night_end >= t_min_full and night_start <= t_max_full:
+                fig.add_vrect(
+                    x0=max(night_start, t_min_full),
+                    x1=min(night_end, t_max_full),
+                    fillcolor="rgba(15, 23, 42, 0.04)",
+                    layer="below",
+                    line_width=0
+                )
+            curr_day += pd.Timedelta(days=1)
+
+    # Axis Calibrations
+    bft_ticks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    bft_stretched_vals = [bft_to_stretched(b) for b in bft_ticks]
+    bft_labels = [
+        "0 Bft", "1 Bft", "2 Bft", "3 Bft (Gentle)", "4 Bft (Moderate)",
+        "5 Bft (Fresh)", "6 Bft (Strong)", "7 Bft (Near Gale)", "8 Bft (Gale)", "9 Bft (Storm)"
+    ]
+
+    max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
+    top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
 
     fig.update_yaxes(
         title_text="<b>Beaufort Force (Stretched)</b>",
@@ -288,9 +547,29 @@ if df_all is not None and not df_all.empty:
         fixedrange=True
     )
 
-    fig_height = 780 if has_temp else 600
+    # Default 6h Initial Viewport Window
+    t_end_view = df_plot_lines["timestamp"].max()
+    t_start_data = df_plot_lines["timestamp"].min()
+
+    if time_preset == "Last 6 Hours (Default)":
+        t_start_view = max(t_start_data, t_end_view - pd.Timedelta(hours=6))
+    elif time_preset == "Last 24 Hours":
+        t_start_view = max(t_start_data, t_end_view - pd.Timedelta(hours=24))
+    elif time_preset == "Last 3 Days":
+        t_start_view = max(t_start_data, t_end_view - pd.Timedelta(days=3))
+    elif time_preset == "Last 7 Days":
+        t_start_view = max(t_start_data, t_end_view - pd.Timedelta(days=7))
+    else:
+        t_start_view = t_start_data
+
+    fig.update_xaxes(
+        gridcolor="#e2e8f0",
+        showgrid=True,
+        range=[t_start_view, t_end_view]
+    )
+
     fig.update_layout(
-        height=fig_height,
+        height=780 if has_temp else 600,
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
         bargap=0,
@@ -309,286 +588,21 @@ if df_all is not None and not df_all.empty:
         margin=dict(l=35, r=20, t=50, b=30)
     )
 
-    # Prepare Lightweight JSON Dataset for Browser-Side Slicing
-    export_df = pd.DataFrame({
-        "t": df_all["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S"),
-        "ts": df_all["timestamp"].astype("int64") // 10**6,
-        "vk": df_all["velocita_knots"].fillna(-1).round(1),
-        "vb": df_all["velocita_bft"].fillna(-1).round(2),
-        "vy": df_all["velocita_plot_y"].fillna(-1).round(3),
-        "rk": df_all["raffica_knots"].fillna(-1).round(1),
-        "rb": df_all["raffica_bft"].fillna(-1).round(2),
-        "ry": df_all["raffica_plot_y"].fillna(-1).round(3),
-        "deg": df_all["direzione_deg"].fillna(-1).round(0),
-        "card": df_all["direzione_cardinal"].fillna(""),
-        "tc": df_all["temperatura_c"].fillna(-999).round(1) if has_temp else [None]*len(df_all),
-        "hr": df_all["timestamp"].dt.hour
-    })
-    records_json = export_df.to_json(orient="records")
-    layout_json = json.dumps(fig.to_plotly_json()["layout"])
-
-    # 5. Client-Side Progressive Engine HTML/JS
-    html_code = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
-        <style>
-            html, body {{ margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #ffffff; }}
-            #chart {{ width: 100%; height: {fig_height}px; }}
-            #nav-bar {{
-                display: flex; gap: 8px; align-items: center; padding: 6px 14px;
-                background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-family: sans-serif; font-size: 13px;
-            }}
-            .btn {{
-                background: #ffffff; border: 1px solid #cbd5e1; border-radius: 4px;
-                padding: 4px 10px; cursor: pointer; font-weight: 500; color: #334155;
-            }}
-            .btn:hover {{ background: #f1f5f9; }}
-            .btn-live {{ background: #ef4444; color: #ffffff; border-color: #dc2626; }}
-            .btn-live:hover {{ background: #dc2626; }}
-        </style>
-    </head>
-    <body>
-        <div id="nav-bar">
-            <span style="font-weight:600; color:#475569;">Quick Jump:</span>
-            <button class="btn" onclick="jumpHours(6)">6h</button>
-            <button class="btn" onclick="jumpHours(24)">24h</button>
-            <button class="btn" onclick="jumpHours(72)">3 Days</button>
-            <button class="btn" onclick="jumpHours(168)">7 Days</button>
-            <button class="btn" onclick="jumpAll()">All History</button>
-            <button class="btn btn-live" onclick="jumpLive()">🔴 Live View</button>
-            <label style="margin-left:auto; display:flex; align-items:center; gap:4px; cursor:pointer;">
-                <input type="checkbox" id="daytime-toggle" onchange="toggleDaytime()"> ☀️ Daytime Only (06-19h)
-            </label>
-        </div>
-        <div id="chart"></div>
-
-        <script>
-            const allData = {records_json};
-            const baseLayout = {layout_json};
-            const hasTemp = {"true" if has_temp else "false"};
-            let isDaytimeOnly = false;
-
-            const chartDiv = document.getElementById('chart');
-
-            const tMaxMs = allData[allData.length - 1].ts;
-            const tMinMs = allData[0].ts;
-
-            let currentStartMs = Math.max(tMinMs, tMaxMs - 6 * 3600 * 1000);
-            let currentEndMs = tMaxMs;
-
-            function sliceAndBuildTraces(startMs, endMs) {{
-                const pad = 45 * 60 * 1000;
-                const paddedStart = startMs - pad;
-                const paddedEnd = endMs + pad;
-
-                let visible = [];
-                for (let i = 0; i < allData.length; i++) {{
-                    const d = allData[i];
-                    if (d.ts >= paddedStart && d.ts <= paddedEnd) {{
-                        if (!isDaytimeOnly || (d.hr >= 6 && d.hr <= 18)) {{
-                            visible.push(d);
-                        }}
-                    }}
-                }}
-
-                if (visible.length === 0) visible = [allData[allData.length - 1]];
-
-                let xArr = [], yRaff = [], colRaff = [], yVel = [], colVel = [];
-                let gustText = [], speedText = [], yDeg = [], degCustom = [];
-                let customGust = [], customSpeed = [];
-                let tempDay = [], tempNight = [];
-
-                let speedArrows = [];
-                let compArrows = [];
-
-                let lastSpeedIdx = -999, lastGustIdx = -999;
-                let lastDeg = -999, lastCompIdx = -999;
-
-                const stepStride = Math.max(2, Math.floor(visible.length / 22));
-                const compStride = Math.max(3, Math.floor(visible.length / 20));
-
-                for (let i = 0; i < visible.length; i++) {{
-                    const d = visible[i];
-                    xArr.push(d.t);
-
-                    const rY = d.ry >= 0 ? d.ry : null;
-                    const vY = d.vy >= 0 ? d.vy : null;
-                    yRaff.push(rY);
-                    yVel.push(vY);
-                    colRaff.push(d.rb >= 0 ? d.rb : null);
-                    colVel.push(d.vb >= 0 ? d.vb : null);
-
-                    customGust.push([d.rb, d.rk]);
-                    customSpeed.push([d.vb, d.vk, d.deg]);
-                    yDeg.push(d.deg >= 0 ? d.deg : null);
-                    degCustom.push([d.card, d.vk, d.vb]);
-
-                    // Dynamic Subplot 1 Labels & Decreased Stem / Increased Head Arrows
-                    let sLabel = "";
-                    let gLabel = "";
-                    if (d.vk >= 0 && (i - lastSpeedIdx >= stepStride || i === 0 || i === visible.length - 1)) {{
-                        sLabel = d.vk.toFixed(1);
-                        lastSpeedIdx = i;
-
-                        if (d.deg >= 0 && vY !== null) {{
-                            const rad = ((d.deg + 180) % 360) * (Math.PI / 180.0);
-                            const stemLen = 18;
-                            const dx = stemLen * Math.sin(rad);
-                            const dy = stemLen * Math.cos(rad);
-                            speedArrows.push({{
-                                x: d.t, y: vY, xref: 'x1', yref: 'y1', yshift: -24,
-                                ax: -dx, ay: dy, axref: 'pixel', ayref: 'pixel',
-                                showarrow: true, arrowhead: 2, arrowsize: 1.35, arrowwidth: 1.3,
-                                arrowcolor: '#0f172a', opacity: 0.95
-                            }});
-                        }}
-                    }}
-
-                    if (d.rk >= 0 && (i - lastGustIdx >= stepStride || i === 0 || i === visible.length - 1)) {{
-                        gLabel = d.rk.toFixed(1);
-                        lastGustIdx = i;
-                    }}
-                    speedText.push(sLabel);
-                    gustText.push(gLabel);
-
-                    // Subplot 2 Direction Rotating Wind Arrows
-                    if (d.deg >= 0) {{
-                        const dDiff = Math.abs((d.deg - lastDeg + 180) % 360 - 180);
-                        if (dDiff >= 20 || i - lastCompIdx >= compStride || i === 0) {{
-                            lastDeg = d.deg;
-                            lastCompIdx = i;
-
-                            const rad = ((d.deg + 180) % 360) * (Math.PI / 180.0);
-                            const arrowLen = 60;
-                            const dx = arrowLen * Math.sin(rad);
-                            const dy = arrowLen * Math.cos(rad);
-                            const aCol = (d.vk >= 18.0) ? '#16a34a' : '#dc2626';
-
-                            compArrows.push({{
-                                x: d.t, y: d.deg, xref: 'x2', yref: 'y2',
-                                ax: -dx, ay: dy, axref: 'pixel', ayref: 'pixel',
-                                showarrow: true, arrowhead: 2, arrowsize: 2, arrowwidth: 1.5,
-                                arrowcolor: aCol, opacity: 0.9
-                            }});
-                        }}
-                    }}
-
-                    if (hasTemp) {{
-                        if (d.tc > -900) {{
-                            if (d.hr >= 6 && d.hr <= 18) {{
-                                tempDay.push(d.tc);
-                                tempNight.push(null);
-                            }} else {{
-                                tempDay.push(null);
-                                tempNight.push(d.tc);
-                            }}
-                        }} else {{
-                            tempDay.push(null);
-                            tempNight.push(null);
-                        }}
-                    }}
-                }}
-
-                const traces = [
-                    {{ x: xArr, y: yRaff, marker: {{ color: colRaff, colorscale: WIND_COLORSCALE_GUST, cmin: 0, cmax: 8, line: {{ width: 0 }} }}, width: 2*60*1000, hoverinfo: 'skip', showlegend: false, type: 'bar' }},
-                    {{ x: xArr, y: yVel, marker: {{ color: colVel, colorscale: WIND_COLORSCALE_SPEED, cmin: 0, cmax: 8, line: {{ width: 0 }} }}, width: 2*60*1000, hoverinfo: 'skip', showlegend: false, type: 'bar' }},
-                    {{ x: xArr, y: yRaff, text: gustText, textposition: 'top center', textfont: {{ family: 'Arial, sans-serif', size: 10.0, color: '#b91c1c' }}, customdata: customGust, mode: 'lines+markers+text', name: 'Gust (Raffica)', connectgaps: false, line: {{ color: '#0f172a', width: 1.6, dash: 'dot' }}, marker: {{ symbol: 'circle', size: 4.0, color: '#0f172a' }}, hovertemplate: '<b>Gust:</b> %{{customdata[0]:.1f}} Bft (%{{customdata[1]:.1f}} kts)<extra></extra>', type: 'scatter' }},
-                    {{ x: xArr, y: yVel, text: speedText, textposition: 'bottom center', textfont: {{ family: 'Arial, sans-serif', size: 10.0, color: '#0f172a' }}, customdata: customSpeed, mode: 'lines+markers+text', name: 'Wind Speed (Avg)', connectgaps: false, line: {{ color: '#0f172a', width: 2.2 }}, marker: {{ size: 4.0, color: '#0f172a' }}, hovertemplate: '<b>Speed:</b> %{{customdata[0]:.1f}} Bft (%{{customdata[1]:.1f}} kts)<br><b>Dir:</b> %{{customdata[2]:.0f}}°<extra></extra>', type: 'scatter' }},
-                    {{ x: xArr, y: yDeg, mode: 'markers', name: 'Direction', connectgaps: false, marker: {{ symbol: 'circle', size: 3.5, color: '#64748b' }}, customdata: degCustom, hovertemplate: '<b>Direction:</b> %{{customdata[0]}} (%{{y:.0f}}°)<br><b>Speed:</b> %{{customdata[2]:.1f}} Bft (%{{customdata[1]:.1f}} kts)<extra></extra>', type: 'scatter', xaxis: 'x', yaxis: 'y2' }}
-                ];
-
-                if (hasTemp) {{
-                    traces.push({{ x: xArr, y: tempDay, mode: 'lines+markers', name: 'Temp (Day: 06-19h)', connectgaps: false, line: {{ color: '#eab308', width: 2.2 }}, marker: {{ size: 4, color: '#eab308', line: {{ color: '#ca8a04', width: 1 }} }}, hovertemplate: '<b>Temp (Day):</b> %{{y:.1f}} °C<extra></extra>', type: 'scatter', xaxis: 'x', yaxis: 'y3' }});
-                    if (!isDaytimeOnly) {{
-                        traces.push({{ x: xArr, y: tempNight, mode: 'lines+markers', name: 'Temp (Night: 19-06h)', connectgaps: false, line: {{ color: '#1e3a8a', width: 2.2 }}, marker: {{ size: 4, color: '#1e3a8a', line: {{ color: '#0f172a', width: 1 }} }}, hovertemplate: '<b>Temp (Night):</b> %{{y:.1f}} °C<extra></extra>', type: 'scatter', xaxis: 'x', yaxis: 'y3' }});
-                    }}
-                }}
-
-                return {{ traces, annotations: speedArrows.concat(compArrows) }};
-            }}
-
-            const initialRender = sliceAndBuildTraces(currentStartMs, currentEndMs);
-            baseLayout.annotations = initialRender.annotations;
-            baseLayout.xaxis.range = [
-                new Date(currentStartMs).toISOString().replace('T', ' ').substring(0, 19),
-                new Date(currentEndMs).toISOString().replace('T', ' ').substring(0, 19)
-            ];
-
-            Plotly.newPlot(chartDiv, initialRender.traces, baseLayout, {{
-                scrollZoom: true,
-                displayModeBar: true,
-                displaylogo: false,
-                modeBarButtonsToRemove: ['lasso2d', 'select2d']
-            }});
-
-            // Seamless Client-Side Infinite Pan / Scroll Listener
-            let debounceTimer = null;
-            chartDiv.on('plotly_relayout', function(eventdata) {{
-                const x0 = eventdata['xaxis.range[0]'] || (eventdata['xaxis.range'] && eventdata['xaxis.range'][0]);
-                const x1 = eventdata['xaxis.range[1]'] || (eventdata['xaxis.range'] && eventdata['xaxis.range'][1]);
-
-                if (x0 && x1) {{
-                    const sMs = new Date(x0).getTime();
-                    const eMs = new Date(x1).getTime();
-
-                    if (!isNaN(sMs) && !isNaN(eMs)) {{
-                        currentStartMs = sMs;
-                        currentEndMs = eMs;
-
-                        clearTimeout(debounceTimer);
-                        debounceTimer = setTimeout(function() {{
-                            const updated = sliceAndBuildTraces(currentStartMs, currentEndMs);
-                            baseLayout.annotations = updated.annotations;
-                            baseLayout.xaxis.range = [x0, x1];
-                            // Instant in-place Plotly React (Zero page reload)
-                            Plotly.react(chartDiv, updated.traces, baseLayout);
-                        }}, 120);
-                    }}
-                }}
-            }});
-
-            window.jumpHours = function(hrs) {{
-                currentEndMs = tMaxMs;
-                currentStartMs = Math.max(tMinMs, tMaxMs - hrs * 3600 * 1000);
-                updateChartWindow();
-            }};
-
-            window.jumpAll = function() {{
-                currentStartMs = tMinMs;
-                currentEndMs = tMaxMs;
-                updateChartWindow();
-            }};
-
-            window.jumpLive = function() {{
-                jumpHours(6);
-            }};
-
-            window.toggleDaytime = function() {{
-                isDaytimeOnly = document.getElementById('daytime-toggle').checked;
-                updateChartWindow();
-            }};
-
-            function updateChartWindow() {{
-                const updated = sliceAndBuildTraces(currentStartMs, currentEndMs);
-                baseLayout.annotations = updated.annotations;
-                baseLayout.xaxis.range = [
-                    new Date(currentStartMs).toISOString().replace('T', ' ').substring(0, 19),
-                    new Date(currentEndMs).toISOString().replace('T', ' ').substring(0, 19)
-                ];
-                Plotly.react(chartDiv, updated.traces, baseLayout);
-            }}
-        </script>
-    </body>
-    </html>
-    """
-
-    components.html(html_code, height=fig_height + 50)
+    # Render Chart
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            "scrollZoom": True,
+            "displayModeBar": True,
+            "displaylogo": False,
+            "modeBarButtonsToRemove": ["lasso2d", "select2d"]
+        }
+    )
 
     with st.expander("📋 View Full Data Log"):
         st.dataframe(
-            df_all.sort_values("timestamp", ascending=False),
+            df_filtered.sort_values("timestamp", ascending=False),
             use_container_width=True
         )
 else:
