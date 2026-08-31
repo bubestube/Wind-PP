@@ -33,19 +33,6 @@ def bft_to_stretched(bft_val):
         return np.nan
     return math.pow(max(0.0, float(bft_val)), BFT_EXP)
 
-# Uniform Heavy/Bold Wind Direction Arrows (Consistent weight across all 8 cardinal & diagonal angles)
-def deg_to_wind_arrow(deg):
-    if pd.isna(deg):
-        return ""
-    # True meteorological wind direction: points TO where wind is blowing
-    # 0° (North wind -> blows South) = ⬇
-    # 90° (East wind -> blows West)   = ⬅
-    # 180° (South wind -> blows North) = ⬆
-    # 270° (West wind -> blows East)  = ➡
-    heavy_arrows = ["⬇", "⬋", "⬅", "⬉", "⬆", "⬈", "➡", "⬊"]
-    idx = int(((float(deg) % 360) + 22.5) // 45) % 8
-    return heavy_arrows[idx]
-
 # Continuous Beaufort Color Scale for Area Fills (0 to 8+ Bft)
 WIND_COLORSCALE_GUST = [
     [0.00, "rgba(255, 255, 255, 0.25)"],  # 0-1 Bft: Calm / Light
@@ -114,7 +101,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🪁 Porto Pollo (Sardinia) – Live Wind Station")
-st.caption("Gradient-shaded Beaufort monitor (*Default 6h view with infinite backward scrolling*).")
+st.caption("Real-time weather station monitor with **Continuous Angulation Wind Vectors & Gradient Fill** (*Scroll wheel to zoom, drag to pan horizontally*).")
 
 # 1. Cached Data Loader
 @st.cache_data(ttl=60, show_spinner=False)
@@ -235,9 +222,10 @@ if df is not None and not df.empty:
     else:
         df_plot_lines = df_plot.copy()
 
-    # Dynamic Labels & Uniformly Bold Wind Direction Vectors
+    # Dynamic Labels & Precise Vector Points Registry
     speed_labels = [""] * len(df_plot_lines)
     gust_labels = [""] * len(df_plot_lines)
+    labeled_speed_points = []
 
     valid_mask = df_plot_lines["velocita_knots"].notnull()
     valid_indices = df_plot_lines.index[valid_mask].tolist()
@@ -246,8 +234,12 @@ if df is not None and not df.empty:
         f_idx = valid_indices[0]
         v0 = df_plot_lines.loc[f_idx, 'velocita_knots']
         d0 = df_plot_lines.loc[f_idx, 'direzione_deg']
-        a0 = deg_to_wind_arrow(d0)
-        speed_labels[f_idx] = f"{v0:.1f}<br><span style='font-size:15px; font-weight:bold; line-height:1.2;'>{a0}</span>"
+        speed_labels[f_idx] = f"{v0:.1f}"
+        labeled_speed_points.append({
+            "timestamp": df_plot_lines.loc[f_idx, 'timestamp'],
+            "velocita_plot_y": df_plot_lines.loc[f_idx, 'velocita_plot_y'],
+            "direzione_deg": d0
+        })
 
         last_s_val = v0
         last_s_idx = f_idx
@@ -257,6 +249,8 @@ if df is not None and not df.empty:
         v_arr = df_plot_lines["velocita_knots"].to_numpy()
         r_arr = df_plot_lines["raffica_knots"].to_numpy()
         d_arr = df_plot_lines["direzione_deg"].to_numpy()
+        y_arr = df_plot_lines["velocita_plot_y"].to_numpy()
+        t_arr = df_plot_lines["timestamp"].to_numpy()
 
         for idx in valid_indices[1:]:
             curr_v = v_arr[idx]
@@ -267,9 +261,12 @@ if df is not None and not df.empty:
             pts_since_s = idx - last_s_idx
 
             if (delta_s >= 1.0 and pts_since_s >= 2) or pts_since_s >= 8:
-                arrow = deg_to_wind_arrow(curr_d)
-                # Uniform bold styling applied to all directions
-                speed_labels[idx] = f"{curr_v:.1f}<br><span style='font-size:15px; font-weight:bold; line-height:1.2;'>{arrow}</span>"
+                speed_labels[idx] = f"{curr_v:.1f}"
+                labeled_speed_points.append({
+                    "timestamp": t_arr[idx],
+                    "velocita_plot_y": y_arr[idx],
+                    "direzione_deg": curr_d
+                })
                 last_s_val = curr_v
                 last_s_idx = idx
 
@@ -284,7 +281,7 @@ if df is not None and not df.empty:
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
 
-    # --- Smooth Gradient Resampling across Full Timeline ---
+    # Smooth Gradient Resampling across Full Timeline
     fill_segments = []
     seg_start = 0
     gap_pos = list(gap_indices) + [len(df_plot)]
@@ -298,7 +295,7 @@ if df is not None and not df.empty:
         seg_start = g_pos
 
     df_gradient_fill = pd.concat(fill_segments, ignore_index=True) if fill_segments else df_plot.copy()
-    bar_width_ms = 2 * 60 * 1000  # 2 minute gradient bar resolution
+    bar_width_ms = 2 * 60 * 1000
 
     # 4. Build Multi-Panel Subplots
     fig = make_subplots(
@@ -364,7 +361,7 @@ if df is not None and not df.empty:
         hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=1, col=1)
 
-    # Subplot 1: Sustained Speed Trace with Number & Direction Arrow Below
+    # Subplot 1: Sustained Speed Trace with Number Below
     fig.add_trace(go.Scatter(
         x=df_plot_lines["timestamp"],
         y=df_plot_lines["velocita_plot_y"],
@@ -380,6 +377,36 @@ if df is not None and not df.empty:
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
+    # Subplot 1: Exact Continuous Angulation Vector Arrows under Speed Labels (Bold & Sized)
+    mini_arrow_len = 16
+    for pt in labeled_speed_points:
+        deg = pt["direzione_deg"]
+        if pd.isna(deg) or pd.isna(pt["velocita_plot_y"]):
+            continue
+
+        # Exact degree vector pointing to (deg + 180)
+        angle_rad = math.radians((float(deg) + 180.0) % 360.0)
+        dx = mini_arrow_len * math.sin(angle_rad)
+        dy = mini_arrow_len * math.cos(angle_rad)
+
+        fig.add_annotation(
+            x=pt["timestamp"],
+            y=pt["velocita_plot_y"],
+            xref="x1",
+            yref="y1",
+            yshift=-25,
+            ax=-dx,
+            ay=dy,
+            axref="pixel",
+            ayref="pixel",
+            showarrow=True,
+            arrowhead=2,
+            arrowsize=1.2,
+            arrowwidth=2.2,
+            arrowcolor="#0f172a",
+            opacity=0.95
+        )
+
     # Subplot 2: Direction Trace
     fig.add_trace(go.Scatter(
         x=df_plot_lines["timestamp"],
@@ -392,7 +419,7 @@ if df is not None and not df.empty:
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=2, col=1)
 
-    # Subplot 2: Compass Vector Arrows
+    # Subplot 2: Exact Rotating Vector Wind Arrows (Green >= 18kts, Red < 18kts)
     df_for_arrows = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
@@ -442,8 +469,8 @@ if df is not None and not df.empty:
             ayref="pixel",
             showarrow=True,
             arrowhead=2,
-            arrowsize=1.0,
-            arrowwidth=1.8,
+            arrowsize=1.1,
+            arrowwidth=2.0,
             arrowcolor=arrow_color,
             opacity=0.9
         )
