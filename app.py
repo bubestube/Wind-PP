@@ -79,7 +79,7 @@ if os.path.exists(CSV_FILE):
         if has_temp:
             min_temp = round(df_filtered["temperatura_c"].min(), 1)
             max_temp = round(df_filtered["temperatura_c"].max(), 1)
-            temp_stats = f" | 🌡️ Temp: **{min_temp}°C - {max_temp}°C**"
+            temp_stats = f" | 🌡️ Temp: **{min_temp}°C - {max_temp}°C** (🟡 Day / 🔵 Night)"
 
         daytime_label = " (06:00–19:00)" if daytime_only else ""
         st.caption(
@@ -92,7 +92,7 @@ if os.path.exists(CSV_FILE):
         df_for_arrows = df_filtered.copy()
         df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
-        # Insert NaN rows wherever time difference between records > 30 minutes to break lines
+        # Insert NaN rows wherever time difference between records > 30 minutes to cleanly break lines
         df_plot = df_filtered.copy().sort_values("timestamp")
         time_diffs = df_plot["timestamp"].diff()
         gap_indices = df_plot[time_diffs > pd.Timedelta(minutes=30)].index
@@ -101,7 +101,6 @@ if os.path.exists(CSV_FILE):
             nan_rows = []
             for idx in gap_indices:
                 prev_time = df_plot.loc[df_plot.index[df_plot.index.get_loc(idx) - 1], "timestamp"]
-                # Insert a NaN row 1 minute after previous day's last reading
                 nan_row = pd.DataFrame([{
                     "timestamp": prev_time + pd.Timedelta(minutes=1),
                     "velocita_knots": np.nan,
@@ -122,7 +121,7 @@ if os.path.exists(CSV_FILE):
             subplot_titles=(
                 "Wind Speed & Gusts (Knots)",
                 "Wind Direction (Degrees & Vectors)",
-                "Temperature (°C)" if has_temp else None
+                "Temperature (°C) – 🟡 Daytime (06-19h) | 🔵 Nighttime (19-06h)" if has_temp else None
             ),
             row_heights=[0.40, 0.40, 0.20] if has_temp else [0.55, 0.45]
         )
@@ -133,7 +132,7 @@ if os.path.exists(CSV_FILE):
             y=df_plot["velocita_knots"],
             mode="lines+markers", 
             name="Velocità",
-            connectgaps=False,  # Prevents lines from crossing the overnight gap
+            connectgaps=False,
             line=dict(color="#0284c7", width=2.5),
             marker=dict(size=4),
             hovertemplate="<b>Speed:</b> %{y:.2f} kts<extra></extra>"
@@ -176,7 +175,6 @@ if os.path.exists(CSV_FILE):
             if pd.isna(angle_deg) or pd.isna(row_data["direzione_deg"]):
                 continue
             
-            # Dynamic color: Green for >= 18 knots, Red for < 18 knots
             arrow_color = "#16a34a" if (pd.notnull(speed_val) and speed_val >= 18.0) else "#dc2626"
 
             rad = math.radians(angle_deg)
@@ -194,24 +192,43 @@ if os.path.exists(CSV_FILE):
                 ayref="pixel",
                 showarrow=True,
                 arrowhead=2,
-                arrowsize=1.6,
+                arrowsize=1.1,
                 arrowwidth=2.0,
                 arrowcolor=arrow_color,
                 opacity=0.95
             )
 
-        # Subplot 3: Temperature (Bottom)
+        # Subplot 3: Temperature (Yellow for Day, Dark Blue for Night)
         if has_temp:
+            is_day = df_plot["timestamp"].dt.hour.between(6, 18)
+            temp_day = df_plot["temperatura_c"].where(is_day, np.nan)
+            temp_night = df_plot["temperatura_c"].where(~is_day, np.nan)
+
+            # Daytime Temperature Trace (Yellow / Gold)
             fig.add_trace(go.Scatter(
                 x=df_plot["timestamp"], 
-                y=df_plot["temperatura_c"],
+                y=temp_day,
                 mode="lines+markers", 
-                name="Temperatura",
+                name="Temp (Day: 06-19h)",
                 connectgaps=False,
-                line=dict(color="#ef4444", width=2),
-                marker=dict(size=4),
-                hovertemplate="<b>Temp:</b> %{y:.1f} °C<extra></extra>"
+                line=dict(color="#eab308", width=2.5),
+                marker=dict(size=4.5, color="#eab308", line=dict(color="#ca8a04", width=1)),
+                hovertemplate="<b>Temp (Day):</b> %{y:.1f} °C<extra></extra>"
             ), row=3, col=1)
+
+            # Nighttime Temperature Trace (Dark Blue)
+            if not daytime_only:
+                fig.add_trace(go.Scatter(
+                    x=df_plot["timestamp"], 
+                    y=temp_night,
+                    mode="lines+markers", 
+                    name="Temp (Night: 19-06h)",
+                    connectgaps=False,
+                    line=dict(color="#1e3a8a", width=2.5),
+                    marker=dict(size=4.5, color="#1e3a8a", line=dict(color="#0f172a", width=1)),
+                    hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
+                ), row=3, col=1)
+
             fig.update_yaxes(title_text="°C", row=3, col=1)
 
         # Axis Formatting
