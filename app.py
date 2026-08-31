@@ -113,11 +113,11 @@ if os.path.exists(CSV_FILE):
         df["timestamp"] = pd.to_datetime(df["timestamp"])
         df = df.drop_duplicates(subset=["timestamp"]).sort_values("timestamp")
 
-        # Hard start cutoff
-        df = df[df["timestamp"] >= "2026-08-27 13:41:00"]
+        # Hard start cutoff adjusted to include 13:11 onwards
+        df = df[df["timestamp"] >= "2026-08-27 13:11:00"]
 
         if df.empty:
-            st.info("No data points after August 27, 2026 13:41 yet.")
+            st.info("No data points after August 27, 2026 13:11 yet.")
             st.stop()
 
         latest = df.iloc[-1]
@@ -211,10 +211,10 @@ if os.path.exists(CSV_FILE):
         df_for_arrows = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
         df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
-        # Gap Disconnectors for Lines
+        # Gap Disconnectors for Lines (Raised threshold to 45 min so 30m gaps connect seamlessly)
         df_plot = df_filtered.copy().sort_values("timestamp").reset_index(drop=True)
         time_diffs = df_plot["timestamp"].diff()
-        gap_indices = df_plot[time_diffs > pd.Timedelta(minutes=30)].index
+        gap_indices = df_plot[time_diffs > pd.Timedelta(minutes=45)].index
 
         if len(gap_indices) > 0:
             nan_rows = []
@@ -236,7 +236,7 @@ if os.path.exists(CSV_FILE):
         else:
             df_plot_lines = df_plot.copy()
 
-        # --- Evenly Distributed Dynamic Text Labels & Arrow Record (No hard cutoff) ---
+        # Dynamic Text Labels & Arrow Record
         speed_labels = [""] * len(df_plot_lines)
         gust_labels = [""] * len(df_plot_lines)
         labeled_speed_points = []
@@ -260,7 +260,6 @@ if os.path.exists(CSV_FILE):
             last_gust_val = df_plot_lines.loc[f_idx, 'raffica_knots'] if pd.notnull(df_plot_lines.loc[f_idx, 'raffica_knots']) else -999.0
             last_gust_idx = f_idx
 
-            # Spacing adapts smoothly based on total records
             min_pts_gap = 3 if len(valid_indices) < 200 else (5 if len(valid_indices) < 600 else 8)
             fallback_step = max(min_pts_gap * 2, len(valid_indices) // 35)
 
@@ -272,7 +271,6 @@ if os.path.exists(CSV_FILE):
                 delta_kts = abs(curr_val - last_speed_val)
                 pts_since = idx - last_speed_idx
 
-                # Condition: >= 1.0 kt change (with a small index gap) or fallback step
                 if (delta_kts >= 1.0 and pts_since >= min_pts_gap) or pts_since >= fallback_step:
                     speed_labels[idx] = f"{curr_val:.1f}"
                     labeled_speed_points.append({
@@ -283,7 +281,6 @@ if os.path.exists(CSV_FILE):
                     last_speed_val = curr_val
                     last_speed_idx = idx
 
-                # Gust labels
                 if pd.notnull(curr_gust):
                     delta_gust = abs(curr_gust - last_gust_val)
                     pts_since_g = idx - last_gust_idx
@@ -324,10 +321,9 @@ if os.path.exists(CSV_FILE):
             row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
         )
 
-        bar_width_ms = 60 * 1000  # 1 minute
+        bar_width_ms = 60 * 1000
 
-        # --- SUBPLOT 1: STRETCHED BEAUFORT GRADIENT FILLS + BLACK LINES + LABELS ---
-        # 1. Gust Color Fill Area
+        # Subplot 1: Gust Fill
         fig.add_trace(go.Bar(
             x=df_gradient_fill["timestamp"],
             y=df_gradient_fill["raffica_plot_y"],
@@ -344,7 +340,7 @@ if os.path.exists(CSV_FILE):
             name="Gust Gradient Fill"
         ), row=1, col=1)
 
-        # 2. Sustained Speed Color Fill Area
+        # Subplot 1: Speed Fill
         fig.add_trace(go.Bar(
             x=df_gradient_fill["timestamp"],
             y=df_gradient_fill["velocita_plot_y"],
@@ -361,7 +357,7 @@ if os.path.exists(CSV_FILE):
             name="Speed Gradient Fill"
         ), row=1, col=1)
 
-        # 3. Gust Trace in Stretched Scale with Gust Labels ABOVE
+        # Subplot 1: Gust Trace
         fig.add_trace(go.Scatter(
             x=df_plot_lines["timestamp"],
             y=df_plot_lines["raffica_plot_y"],
@@ -377,7 +373,7 @@ if os.path.exists(CSV_FILE):
             hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
         ), row=1, col=1)
 
-        # 4. Sustained Wind Speed Line with Speed Labels BELOW (Offset for arrow placement)
+        # Subplot 1: Sustained Speed Trace
         fig.add_trace(go.Scatter(
             x=df_plot_lines["timestamp"],
             y=df_plot_lines["velocita_plot_y"],
@@ -393,14 +389,13 @@ if os.path.exists(CSV_FILE):
             hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
         ), row=1, col=1)
 
-        # 5. Precise Mini Black Vector Arrows positioned directly under the speed numbers
-        mini_arrow_len = 16  # Vector length in pixels
+        # Subplot 1: Micro Vector Arrows Under Speed Labels
+        mini_arrow_len = 16
         for pt in labeled_speed_points:
             deg = pt["direzione_deg"]
             if pd.isna(deg) or pd.isna(pt["velocita_plot_y"]):
                 continue
 
-            # Continuous exact angulation: wind blowing TO (deg + 180)
             angle_rad = math.radians((float(deg) + 180.0) % 360.0)
             dx = mini_arrow_len * math.sin(angle_rad)
             dy = mini_arrow_len * math.cos(angle_rad)
@@ -410,7 +405,7 @@ if os.path.exists(CSV_FILE):
                 y=pt["velocita_plot_y"],
                 xref="x1",
                 yref="y1",
-                yshift=-23,       # Centered right under the speed label
+                yshift=-23,
                 ax=-dx,
                 ay=dy,
                 axref="pixel",
@@ -423,7 +418,7 @@ if os.path.exists(CSV_FILE):
                 opacity=0.95
             )
 
-        # --- SUBPLOT 2: DIRECTION (0-360° with clean grid & arrows) ---
+        # Subplot 2: Direction Trace
         fig.add_trace(go.Scatter(
             x=df_plot_lines["timestamp"],
             y=df_plot_lines["direzione_deg"],
@@ -435,7 +430,7 @@ if os.path.exists(CSV_FILE):
             hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
         ), row=2, col=1)
 
-        # Adaptive Arrow Placement for Subplot 2
+        # Subplot 2: Compass Arrows
         steady_step = max(4, len(df_for_arrows) // 30)
         selected_indices = []
         if not df_for_arrows.empty:
@@ -488,7 +483,7 @@ if os.path.exists(CSV_FILE):
                 opacity=0.9
             )
 
-        # --- SUBPLOT 3: TEMPERATURE STRIP ---
+        # Subplot 3: Temperature
         if has_temp:
             is_day = df_plot_lines["timestamp"].dt.hour.between(6, 18)
             temp_day = df_plot_lines["temperatura_c"].where(is_day, np.nan)
@@ -519,7 +514,7 @@ if os.path.exists(CSV_FILE):
 
             fig.update_yaxes(title_text="°C", row=3, col=1, gridcolor="#e2e8f0", fixedrange=True)
 
-        # --- VERTICAL DAY/NIGHT SHADING ---
+        # Vertical Day/Night Shading
         if not daytime_only and not df_plot_lines.empty:
             t_min = df_plot_lines["timestamp"].min()
             t_max = df_plot_lines["timestamp"].max()
@@ -537,7 +532,7 @@ if os.path.exists(CSV_FILE):
                     )
                 curr_day += pd.Timedelta(days=1)
 
-        # --- STRETCHED BEAUFORT AXIS CALIBRATION ---
+        # Axis Formats
         bft_ticks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
         bft_stretched_vals = [bft_to_stretched(b) for b in bft_ticks]
         bft_labels = [
