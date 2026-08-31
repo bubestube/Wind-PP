@@ -169,8 +169,7 @@ if os.path.exists(CSV_FILE):
             hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y}°)<br><b>Speed:</b> %{customdata[1]:.2f} kts<extra></extra>"
         ), row=2, col=1)
 
-        # --- Adaptive Arrow Selection: Direct Angular Delta ---
-        # Base fallback distance for steady wind (e.g. at most 1 arrow every 5-8 points)
+        # --- Adaptive Arrow Selection: Direction Shift > 20° ---
         steady_step = max(3, len(df_for_arrows) // 25)
         
         selected_indices = []
@@ -185,13 +184,13 @@ if os.path.exists(CSV_FILE):
                 if pd.isna(curr_deg):
                     continue
                 
-                # Compute absolute angular shift (shortest path on 360 circle)
+                # Compute absolute angular shift (shortest path on 360° circle)
                 delta_deg = abs((curr_deg - last_deg + 180) % 360 - 180)
                 points_since_last = i - last_idx
 
-                # Condition 1: Wind shifted significantly (>= 15 degrees) -> Show arrow
-                # Condition 2: Wind is steady, but reached the fallback interval -> Show arrow
-                if delta_deg >= 15.0 or points_since_last >= steady_step:
+                # Condition 1: Wind shifted > 20 degrees -> Plot immediately
+                # Condition 2: Wind is steady -> Plot after steady_step points
+                if delta_deg > 20.0 or points_since_last >= steady_step:
                     selected_indices.append(i)
                     last_idx = i
                     last_deg = curr_deg
@@ -223,7 +222,7 @@ if os.path.exists(CSV_FILE):
                 ayref="pixel",
                 showarrow=True,
                 arrowhead=2,
-                arrowsize=1.2,
+                arrowsize=1.1,
                 arrowwidth=2.0,
                 arrowcolor=arrow_color,
                 opacity=0.95
