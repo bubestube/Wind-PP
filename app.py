@@ -16,7 +16,7 @@ st.set_page_config(
 CSV_FILE = "porto_pollo_wind_history.csv"
 
 st.title("🪁 Porto Pollo Kite Zone – Live Weather & Wind")
-st.caption("Automated scraper via GitHub Actions | Real-time weather dashboard (*Use mouse wheel on graph to zoom in/out in time*)")
+st.caption("Automated scraper via GitHub Actions | Real-time weather dashboard (*Click & drag to scroll/pan horizontally, mouse wheel to zoom*)")
 
 if os.path.exists(CSV_FILE):
     df = pd.read_csv(CSV_FILE, on_bad_lines="skip")
@@ -256,7 +256,7 @@ if os.path.exists(CSV_FILE):
 
             fig.update_yaxes(title_text="°C", row=3, col=1, fixedrange=True)
 
-        # Axis Formatting (fixedrange=True keeps Y-axis locked so wheel zooms X in time)
+        # Axis Formatting (fixedrange=True keeps Y-axis locked so panning & wheel scrolling works purely along the X time-axis)
         fig.update_yaxes(title_text="Knots", row=1, col=1, fixedrange=True)
         fig.update_yaxes(
             title_text="Degrees",
@@ -267,15 +267,23 @@ if os.path.exists(CSV_FILE):
             fixedrange=True
         )
 
-        fig.update_layout(
-            height=780 if has_temp else 600,
-            template="plotly_white",
-            hovermode="x unified",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            margin=dict(l=20, r=20, t=50, b=20)
+        # Add Horizontal Range Slider to bottom axis for scrollbar navigation
+        bottom_row = 3 if has_temp else 2
+        fig.update_xaxes(
+            rangeslider=dict(visible=True, thickness=0.04),
+            row=bottom_row, col=1
         )
 
-        # Render with mouse wheel zoom enabled
+        fig.update_layout(
+            height=820 if has_temp else 640,
+            template="plotly_white",
+            dragmode="pan",  # ⬅️ Sets default mouse action to click-and-drag horizontal scroll/pan
+            hovermode="x unified",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            margin=dict(l=20, r=20, t=50, b=30)
+        )
+
+        # Render chart with scroll zoom and panning active
         st.plotly_chart(
             fig, 
             use_container_width=True,
