@@ -96,18 +96,14 @@ st.markdown("""
         font-weight: 700;
         font-family: monospace;
     }
-    /* Mobile Touch Layer Stabilization */
+    /* Mobile-optimized touch handling */
     div[data-testid="stPlotlyChart"] {
         touch-action: pan-y !important;
         -webkit-user-select: none !important;
         user-select: none !important;
     }
-    div[data-testid="stPlotlyChart"] .main-svg {
-        touch-action: pan-y !important;
-    }
-    /* Enlarged touch targets for Streamlit buttons */
     div.stButton > button {
-        min-height: 42px;
+        min-height: 44px;
         font-size: 15px;
         font-weight: 600;
     }
@@ -190,16 +186,15 @@ if df_all is not None and not df_all.empty:
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 6
 
-    # Touch-Optimized Control Bar
-    st.markdown("**📱 Mobile Zoom & Navigation**")
+    # Touch-Friendly Buttons for Mobile & iPad
     tb1, tb2, tb3, tb4, tb5, tb6 = st.columns([1, 1, 1, 1, 1.2, 1.2])
 
     with tb1:
-        if st.button("🔍 In (+)", help="Zoom in (Halve time range)"):
+        if st.button("🔍 In (+)", help="Zoom in (decrease time span)"):
             st.session_state.window_span_hours = max(2, int(st.session_state.window_span_hours * 0.6))
             st.rerun()
     with tb2:
-        if st.button("🔍 Out (-)", help="Zoom out (Expand time range)"):
+        if st.button("🔍 Out (-)", help="Zoom out (increase time span)"):
             st.session_state.window_span_hours = min(168, int(st.session_state.window_span_hours * 1.6))
             st.rerun()
     with tb3:
@@ -232,7 +227,7 @@ if df_all is not None and not df_all.empty:
 
     if min_slider < max_slider:
         selected_end = st.slider(
-            "Timeline Scrubber:",
+            "Timeline Scrubber (Drag single finger to scroll through history):",
             min_value=min_slider,
             max_value=max_slider,
             value=st.session_state.window_end_time,
