@@ -123,25 +123,32 @@ st.markdown("""
         color: inherit !important;
     }
 
-    /* 2. Window Width Dropdown -> Light Grey Fill */
+    /* 2. Window Width Dropdown -> Force Light Grey Fill Everywhere */
     div[data-testid="stSelectbox"] label p {
         color: #475569 !important;
         font-weight: 600 !important;
     }
+    /* Target outer box and all child divs */
     div[data-testid="stSelectbox"] div[data-baseweb="select"],
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
-    div[data-testid="stSelectbox"] div[role="combobox"] {
-        background-color: #f1f5f9 !important;
-        background: #f1f5f9 !important;
-        color: #0f172a !important;
-        border-color: #cbd5e1 !important;
-        border-radius: 6px !important;
-    }
     div[data-testid="stSelectbox"] div[data-baseweb="select"] * {
+        background-color: #f1f5f9 !important;
         color: #0f172a !important;
         fill: #0f172a !important;
     }
-    /* Popover Menu Options for Selectbox */
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
+        background-color: #f1f5f9 !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 6px !important;
+    }
+    /* Value display text inside selectbox */
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] [aria-selected="true"],
+    div[data-testid="stSelectbox"] div[role="combobox"] {
+        background-color: #f1f5f9 !important;
+        color: #0f172a !important;
+    }
+    /* Popover Menu Options for Selectbox (rendered in portal at body root) */
+    div[data-baseweb="popover"],
+    div[data-baseweb="popover"] > div,
     div[data-baseweb="popover"] ul,
     div[data-baseweb="popover"] li {
         background-color: #f1f5f9 !important;
