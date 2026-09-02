@@ -6,6 +6,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
+import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title="Porto Pollo – Windguru Live Station",
@@ -97,17 +98,13 @@ st.markdown("""
         font-weight: 700;
         font-family: monospace;
     }
-    /* Mobile Touch & Pinch Zoom Fix for iOS Safari and iPadOS */
-    div[data-testid="stPlotlyChart"] {
-        touch-action: none !important;
-        user-select: none !important;
-        -webkit-user-select: none !important;
+    /* Mobile Modebar Visibility & Touch Target Optimization */
+    .modebar-container {
+        opacity: 0.85 !important;
     }
-    div[data-testid="stPlotlyChart"] .js-plotly-plot,
-    div[data-testid="stPlotlyChart"] .plot-container,
-    div[data-testid="stPlotlyChart"] .draglayer,
-    div[data-testid="stPlotlyChart"] .nsewdrag {
-        touch-action: none !important;
+    .modebar-btn {
+        font-size: 18px !important;
+        padding: 6px !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -182,55 +179,51 @@ if df_all is not None and not df_all.empty:
 
     st.write("")
 
-    # 3. Dynamic Timeline Navigation & Window Scrubber
+    # 3. Dynamic Timeline Navigation & Mobile Zoom Steppers
     if "window_end_time" not in st.session_state:
         st.session_state.window_end_time = t_global_max.to_pydatetime()
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 6
 
-    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns([1, 1, 1.3, 1.2, 1, 1])
-    with ctrl_col1:
-        if st.button("◀ -1 Day"):
-            st.session_state.window_end_time = max(
-                (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime(),
-                st.session_state.window_end_time - datetime.timedelta(days=1)
-            )
+    # Mobile-Friendly Primary Steppers (Pan & Quick Zoom)
+    c_zoom1, c_zoom2, c_step1, c_step2, c_live, c_day = st.columns([1.1, 1.1, 1, 1, 1.1, 1.3])
+    with c_zoom1:
+        if st.button("🔍 + Zoom In", help="Halve the active time window"):
+            st.session_state.window_span_hours = max(2, int(st.session_state.window_span_hours / 2))
             st.rerun()
-    with ctrl_col2:
+    with c_zoom2:
+        if st.button("🔍 - Zoom Out", help="Double the active time window"):
+            st.session_state.window_span_hours = min(168, int(st.session_state.window_span_hours * 2))
+            st.rerun()
+    with c_step1:
         if st.button("◀ -6 Hours"):
             st.session_state.window_end_time = max(
                 (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime(),
                 st.session_state.window_end_time - datetime.timedelta(hours=6)
             )
             st.rerun()
-    with ctrl_col3:
-        st.session_state.window_span_hours = st.selectbox(
-            "Window Width:",
-            options=[6, 12, 24, 72, 168],
-            index=0,
-            format_func=lambda h: f"{h} Hours" if h < 24 else f"{h//24} Day{'s' if h > 24 else ''}"
-        )
-    with ctrl_col4:
-        daytime_only = st.checkbox("☀️ Daytime Only (06-19h)", value=False)
-    with ctrl_col5:
+    with c_step2:
         if st.button("+6 Hours ▶"):
             st.session_state.window_end_time = min(
                 t_global_max.to_pydatetime(),
                 st.session_state.window_end_time + datetime.timedelta(hours=6)
             )
             st.rerun()
-    with ctrl_col6:
+    with c_live:
         if st.button("🔴 Live Latest"):
             st.session_state.window_end_time = t_global_max.to_pydatetime()
+            st.session_state.window_span_hours = 6
             st.rerun()
+    with c_day:
+        daytime_only = st.checkbox("☀️ 06-19h Only", value=False)
 
-    # High-precision Timeline Slider for Continuous Scrolling
+    # Timeline Scrubber Slider
     min_slider = (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime()
     max_slider = t_global_max.to_pydatetime()
 
     if min_slider < max_slider:
         selected_end = st.slider(
-            "Scroll Active Timeline Window:",
+            "Timeline Scrubber (Drag to pan horizontally):",
             min_value=min_slider,
             max_value=max_slider,
             value=st.session_state.window_end_time,
@@ -252,7 +245,6 @@ if df_all is not None and not df_all.empty:
         st.warning("No records in selected window.")
         df_slice = df_all.tail(20).copy()
 
-    # Calculations on the micro-slice only (<50-60 points)
     df_slice["velocita_bft"] = knots_to_bft(df_slice["velocita_knots"])
     df_slice["raffica_bft"] = knots_to_bft(df_slice["raffica_knots"])
     df_slice["velocita_plot_y"] = bft_to_stretched(df_slice["velocita_bft"])
@@ -441,7 +433,7 @@ if df_all is not None and not df_all.empty:
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
-    # Subplot 1: Exact Angulation Stemmed Vector Arrows
+    # Subplot 1: Exact Angulation Stemmed Vector Arrows (18px stem, 1.35 head)
     mini_arrow_len = 18
     for pt in labeled_speed_points:
         deg = pt["direzione_deg"]
@@ -645,20 +637,68 @@ if df_all is not None and not df_all.empty:
         margin=dict(l=35, r=20, t=50, b=30)
     )
 
-    # 6. Render Chart with Native Mobile Touch & Pinch Zoom Configuration
+    # 6. Render Chart with Modebar Configured for Mobile Touch
     st.plotly_chart(
         fig,
         use_container_width=True,
         config={
             "scrollZoom": True,
-            "displayModeBar": True,
+            "displayModeBar": True,  # Keep zoom in / zoom out buttons accessible on touch screens
             "displaylogo": False,
-            "doubleClick": "reset",
-            "showTips": False,
-            "watermark": False,
+            "modeBarButtonsToAdd": ["zoomIn2d", "zoomOut2d", "resetScale2d"],
             "modeBarButtonsToRemove": ["lasso2d", "select2d"]
         }
     )
+
+    # 7. Mobile Pinch-to-Zoom Polyfill Bridge
+    components.html("""
+    <script>
+    (function() {
+        const parentDoc = window.parent.document;
+        function attachPinchZoom() {
+            const chartDiv = parentDoc.querySelector('div[data-testid="stPlotlyChart"] .js-plotly-plot');
+            if (!chartDiv || chartDiv._pinchAttached) return;
+
+            let initialDist = 0;
+            chartDiv.addEventListener('touchstart', function(e) {
+                if (e.touches.length === 2) {
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    initialDist = Math.hypot(dx, dy);
+                }
+            }, { passive: true });
+
+            chartDiv.addEventListener('touchmove', function(e) {
+                if (e.touches.length === 2 && initialDist > 0) {
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    const currentDist = Math.hypot(dx, dy);
+                    const ratio = currentDist / initialDist;
+
+                    // Trigger zoom in or out if pinch passes threshold
+                    if (ratio > 1.35) {
+                        const inBtn = chartDiv.querySelector('a[data-val="in"]');
+                        if (inBtn) inBtn.click();
+                        initialDist = currentDist;
+                    } else if (ratio < 0.75) {
+                        const outBtn = chartDiv.querySelector('a[data-val="out"]');
+                        if (outBtn) outBtn.click();
+                        initialDist = currentDist;
+                    }
+                }
+            }, { passive: true });
+
+            chartDiv.addEventListener('touchend', function() {
+                initialDist = 0;
+            }, { passive: true });
+
+            chartDiv._pinchAttached = true;
+        }
+
+        setInterval(attachPinchZoom, 800);
+    })();
+    </script>
+    """, height=0)
 
     with st.expander("📋 View Data Log (Active Window)"):
         st.dataframe(
