@@ -97,74 +97,6 @@ st.markdown("""
         font-weight: 700;
         font-family: monospace;
     }
-
-    /* 1. Force Solid White Buttons */
-    div.stButton > button,
-    div.stButton > button:hover,
-    div.stButton > button:focus,
-    div.stButton > button:active,
-    div.stButton > button:visited {
-        background-color: #ffffff !important;
-        background: #ffffff !important;
-        color: #0f172a !important;
-        border: 1px solid #cbd5e1 !important;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
-        border-radius: 6px !important;
-        font-weight: 600 !important;
-    }
-    div.stButton > button:hover {
-        background-color: #f8fafc !important;
-        background: #f8fafc !important;
-        border-color: #94a3b8 !important;
-        color: #0284c7 !important;
-    }
-    div.stButton > button p,
-    div.stButton > button span {
-        color: inherit !important;
-    }
-
-    /* 2. Window Width Dropdown: Precision Light Grey Box Styling */
-    div[data-testid="stSelectbox"] label p {
-        color: #475569 !important;
-        font-weight: 600 !important;
-    }
-    /* Outer Box Container */
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] > div:first-child {
-        background-color: #f1f5f9 !important;
-        border: 1px solid #cbd5e1 !important;
-        border-radius: 6px !important;
-    }
-    /* Visible Selected Text */
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] div,
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] span {
-        color: #0f172a !important;
-        background-color: transparent !important;
-    }
-    /* Downward Caret Arrow SVG */
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] svg {
-        fill: #475569 !important;
-        color: #475569 !important;
-        background-color: transparent !important;
-    }
-
-    /* Dropdown Options Popup (when clicked open) */
-    div[data-baseweb="popover"] > div,
-    ul[data-baseweb="menu"],
-    li[data-baseweb="menu-item"] {
-        background-color: #ffffff !important;
-        color: #0f172a !important;
-    }
-    li[data-baseweb="menu-item"]:hover,
-    li[data-baseweb="menu-item"][aria-selected="true"] {
-        background-color: #f1f5f9 !important;
-        color: #0284c7 !important;
-    }
-
-    /* 3. Daytime Only Checkbox */
-    div[data-testid="stCheckbox"] label p {
-        color: #0f172a !important;
-        font-weight: 500 !important;
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -267,7 +199,6 @@ if df_all is not None and not df_all.empty:
             format_func=lambda h: f"{h} Hours" if h < 24 else f"{h//24} Day{'s' if h > 24 else ''}"
         )
     with ctrl_col4:
-        st.write("")
         daytime_only = st.checkbox("☀️ Daytime Only (06-19h)", value=False)
     with ctrl_col5:
         if st.button("+6 Hours ▶"):
