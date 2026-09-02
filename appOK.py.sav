@@ -358,29 +358,31 @@ if df_all is not None and not df_all.empty:
         st.warning("No records in selected window.")
         df_slice = df_all.tail(20).copy()
 
-    # --- Adaptive Density Reduction for Long Intervals (3 Days, 7 Days, 30 Days) ---
+    # --- Adaptive Density Reduction & Continuous Grid Setup ---
     span_h = st.session_state.window_span_hours
     if span_h >= 720:          # 30 Days: 2-hour buckets
         resample_rule = "2h"
-        bar_width_ms = 2 * 60 * 60 * 1000
+        bar_width_ms = int(2.05 * 60 * 60 * 1000)
     elif span_h >= 168:        # 7 Days: 30-minute buckets
         resample_rule = "30min"
-        bar_width_ms = 30 * 60 * 1000
+        bar_width_ms = int(30.8 * 60 * 1000)
     elif span_h >= 72:         # 3 Days: 15-minute buckets
         resample_rule = "15min"
-        bar_width_ms = 15 * 60 * 1000
-    else:                      # <= 1 Day: Raw native resolution
+        bar_width_ms = int(15.4 * 60 * 1000)
+    else:                      # <= 1 Day: Native resolution
         resample_rule = None
-        bar_width_ms = 2 * 60 * 1000
+        bar_width_ms = int(2.2 * 60 * 1000)
 
     if resample_rule is not None and not df_slice.empty:
-        df_resampled = df_slice.set_index("timestamp").resample(resample_rule).agg({
+        # Resample on continuous grid
+        df_agg = df_slice.set_index("timestamp").resample(resample_rule).agg({
             "velocita_knots": "mean",
             "raffica_knots": "max",
             "direzione_deg": "mean",
             "temperatura_c": "mean"
-        }).dropna(subset=["velocita_knots"]).reset_index()
-
+        })
+        # Interpolate small reporting gaps (up to 3 periods) so bars are seamlessly continuous
+        df_resampled = df_agg.interpolate(method="time", limit=3).dropna(subset=["velocita_knots"]).reset_index()
         df_resampled["direzione_cardinal"] = df_resampled["direzione_deg"].apply(deg_to_cardinal)
         df_slice = df_resampled
 
@@ -454,7 +456,6 @@ if df_all is not None and not df_all.empty:
         y_arr = df_plot_lines["velocita_plot_y"].to_numpy()
         t_arr = df_plot_lines["timestamp"].to_numpy()
 
-        # Step limits scale dynamically with duration to prevent overlap
         if span_h >= 720:
             min_pts_step = 10
             max_pts_step = 30
@@ -501,23 +502,22 @@ if df_all is not None and not df_all.empty:
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
 
-    # Fast Gradient Fill Interpolation
-    if resample_rule is not None:
-        df_gradient_fill = df_plot.copy()
-    else:
-        fill_segments = []
-        seg_start = 0
-        gap_pos = list(gap_indices) + [len(df_plot)]
-        for g_pos in gap_pos:
-            seg = df_plot.iloc[seg_start:g_pos]
-            if len(seg) >= 2:
-                seg_resampled = seg.set_index("timestamp")[["velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]].resample("2min").interpolate(method="time").reset_index()
-                fill_segments.append(seg_resampled)
-            elif len(seg) == 1:
-                fill_segments.append(seg[["timestamp", "velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]])
-            seg_start = g_pos
+    # Fast Gradient Fill Interpolation (Produces uniform, gapless gradient strips)
+    fill_segments = []
+    seg_start = 0
+    gap_pos = list(gap_indices) + [len(df_plot)]
+    interp_freq = "2min" if resample_rule is None else resample_rule
 
-        df_gradient_fill = pd.concat(fill_segments, ignore_index=True) if fill_segments else df_plot.copy()
+    for g_pos in gap_pos:
+        seg = df_plot.iloc[seg_start:g_pos]
+        if len(seg) >= 2:
+            seg_resampled = seg.set_index("timestamp")[["velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]].resample(interp_freq).interpolate(method="time").reset_index()
+            fill_segments.append(seg_resampled)
+        elif len(seg) == 1:
+            fill_segments.append(seg[["timestamp", "velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]])
+        seg_start = g_pos
+
+    df_gradient_fill = pd.concat(fill_segments, ignore_index=True) if fill_segments else df_plot.copy()
 
     # 5. Multi-Panel Subplots
     fig = make_subplots(
@@ -537,6 +537,7 @@ if df_all is not None and not df_all.empty:
     fig.add_trace(go.Bar(
         x=df_gradient_fill["timestamp"],
         y=df_gradient_fill["raffica_plot_y"],
+        offsetgroup="gust",
         marker=dict(
             color=df_gradient_fill["raffica_bft"],
             colorscale=WIND_COLORSCALE_GUST,
@@ -554,6 +555,7 @@ if df_all is not None and not df_all.empty:
     fig.add_trace(go.Bar(
         x=df_gradient_fill["timestamp"],
         y=df_gradient_fill["velocita_plot_y"],
+        offsetgroup="speed",
         marker=dict(
             color=df_gradient_fill["velocita_bft"],
             colorscale=WIND_COLORSCALE_SPEED,
