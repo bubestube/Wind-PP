@@ -98,7 +98,7 @@ st.markdown("""
         font-family: monospace;
     }
 
-    /* 1. Force Solid White Buttons */
+    /* 1. All Navigation & Action Buttons -> Solid White Fill */
     div.stButton > button,
     div.stButton > button:hover,
     div.stButton > button:focus,
@@ -123,42 +123,48 @@ st.markdown("""
         color: inherit !important;
     }
 
-    /* 2. Force Solid White Window Width Selectbox & Popover */
-    div[data-baseweb="select"] > div,
-    div[data-baseweb="select"] > div:hover,
-    div[data-baseweb="select"] > div:focus {
-        background-color: #ffffff !important;
-        background: #ffffff !important;
-        color: #0f172a !important;
-        border: 1px solid #cbd5e1 !important;
-        border-radius: 6px !important;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+    /* 2. Window Width Dropdown -> Light Grey Fill */
+    div[data-testid="stSelectbox"] label p {
+        color: #475569 !important;
+        font-weight: 600 !important;
     }
-    div[data-baseweb="select"] * {
-        color: #0f172a !important;
-    }
-    div[data-baseweb="popover"],
-    ul[data-baseweb="menu"] {
-        background-color: #ffffff !important;
-        background: #ffffff !important;
-        border: 1px solid #cbd5e1 !important;
-        border-radius: 6px !important;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
-    }
-    li[data-baseweb="menu-item"] {
-        background-color: #ffffff !important;
-        color: #0f172a !important;
-    }
-    li[data-baseweb="menu-item"]:hover {
+    div[data-testid="stSelectbox"] div[data-baseweb="select"],
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+    div[data-testid="stSelectbox"] div[role="combobox"] {
         background-color: #f1f5f9 !important;
+        background: #f1f5f9 !important;
+        color: #0f172a !important;
+        border-color: #cbd5e1 !important;
+        border-radius: 6px !important;
+    }
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] * {
+        color: #0f172a !important;
+        fill: #0f172a !important;
+    }
+    /* Popover Menu Options for Selectbox */
+    div[data-baseweb="popover"] ul,
+    div[data-baseweb="popover"] li {
+        background-color: #f1f5f9 !important;
+        color: #0f172a !important;
+    }
+    div[data-baseweb="popover"] li:hover,
+    div[data-baseweb="popover"] li[aria-selected="true"] {
+        background-color: #e2e8f0 !important;
         color: #0284c7 !important;
     }
 
-    /* 3. Force Solid White Fill for Daytime Only Checkbox */
+    /* 3. Daytime Only Control -> Solid White Fill */
+    div[data-testid="stCheckbox"] {
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 6px !important;
+        padding: 5px 10px !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.04) !important;
+        margin-top: 25px !important;
+    }
     div[data-testid="stCheckbox"] label span[role="checkbox"] {
         background-color: #ffffff !important;
-        background: #ffffff !important;
-        border: 1.5px solid #cbd5e1 !important;
+        border: 1.5px solid #94a3b8 !important;
         border-radius: 4px !important;
     }
     div[data-testid="stCheckbox"] label span[role="checkbox"][aria-checked="true"] {
@@ -167,7 +173,8 @@ st.markdown("""
     }
     div[data-testid="stCheckbox"] label p {
         color: #0f172a !important;
-        font-weight: 500 !important;
+        font-weight: 600 !important;
+        margin: 0 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -271,7 +278,6 @@ if df_all is not None and not df_all.empty:
             format_func=lambda h: f"{h} Hours" if h < 24 else f"{h//24} Day{'s' if h > 24 else ''}"
         )
     with ctrl_col4:
-        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         daytime_only = st.checkbox("☀️ Daytime Only (06-19h)", value=False)
     with ctrl_col5:
         if st.button("+6 Hours ▶"):
