@@ -97,6 +97,30 @@ st.markdown("""
         font-weight: 700;
         font-family: monospace;
     }
+    /* Force Solid White Fill for all Streamlit Buttons across Light & Dark modes */
+    div.stButton > button,
+    div.stButton > button:hover,
+    div.stButton > button:focus,
+    div.stButton > button:active,
+    div.stButton > button:visited {
+        background-color: #ffffff !important;
+        background: #ffffff !important;
+        color: #0f172a !important;
+        border: 1px solid #cbd5e1 !important;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+        border-radius: 6px !important;
+        font-weight: 600 !important;
+    }
+    div.stButton > button:hover {
+        background-color: #f8fafc !important;
+        background: #f8fafc !important;
+        border-color: #94a3b8 !important;
+        color: #0284c7 !important;
+    }
+    div.stButton > button p,
+    div.stButton > button span {
+        color: inherit !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
