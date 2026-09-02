@@ -33,6 +33,14 @@ def bft_to_stretched(bft_val):
         return np.nan
     return math.pow(max(0.0, float(bft_val)), BFT_EXP)
 
+def deg_to_cardinal(deg):
+    if pd.isna(deg):
+        return ""
+    dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+            "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+    ix = int(round(deg / (360.0 / len(dirs)))) % len(dirs)
+    return dirs[ix]
+
 # Continuous Beaufort Color Scale for Area Fills (0 to 8+ Bft)
 WIND_COLORSCALE_GUST = [
     [0.00, "rgba(255, 255, 255, 0.25)"],  # 0-1 Bft: Calm / Light
@@ -307,7 +315,7 @@ if df_all is not None and not df_all.empty:
             st.session_state.window_end_time = t_global_max.to_pydatetime()
             st.rerun()
 
-    # Calculate active month reading for current window position
+    # Active Month Pill
     cur_end_preview = pd.to_datetime(st.session_state.window_end_time)
     cur_start_preview = cur_end_preview - pd.Timedelta(hours=st.session_state.window_span_hours)
     if cur_start_preview.strftime("%B %Y") == cur_end_preview.strftime("%B %Y"):
@@ -317,7 +325,6 @@ if df_all is not None and not df_all.empty:
     else:
         active_month_str = f"{cur_start_preview.strftime('%B %Y')} – {cur_end_preview.strftime('%B %Y')}"
 
-    # Month Reading Display directly above the slider
     st.markdown(
         f'<div class="slider-month-pill">📅 <span>{active_month_str}</span></div>',
         unsafe_allow_html=True
@@ -351,7 +358,29 @@ if df_all is not None and not df_all.empty:
         st.warning("No records in selected window.")
         df_slice = df_all.tail(20).copy()
 
-    # Calculations on the micro-slice only (<50-60 points)
+    # --- Adaptive Density Reduction for Long Intervals (>= 3 Days) ---
+    span_h = st.session_state.window_span_hours
+    if span_h >= 168:
+        resample_rule = "30min"
+        bar_width_ms = 30 * 60 * 1000
+    elif span_h >= 72:
+        resample_rule = "15min"
+        bar_width_ms = 15 * 60 * 1000
+    else:
+        resample_rule = None
+        bar_width_ms = 2 * 60 * 1000
+
+    if resample_rule is not None and not df_slice.empty:
+        df_resampled = df_slice.set_index("timestamp").resample(resample_rule).agg({
+            "velocita_knots": "mean",
+            "raffica_knots": "max",
+            "direzione_deg": "mean",
+            "temperatura_c": "mean"
+        }).dropna(subset=["velocita_knots"]).reset_index()
+
+        df_resampled["direzione_cardinal"] = df_resampled["direzione_deg"].apply(deg_to_cardinal)
+        df_slice = df_resampled
+
     df_slice["velocita_bft"] = knots_to_bft(df_slice["velocita_knots"])
     df_slice["raffica_bft"] = knots_to_bft(df_slice["raffica_knots"])
     df_slice["velocita_plot_y"] = bft_to_stretched(df_slice["velocita_bft"])
@@ -363,7 +392,8 @@ if df_all is not None and not df_all.empty:
     # Gap Disconnectors
     df_plot = df_slice.sort_values("timestamp").reset_index(drop=True)
     time_diffs = df_plot["timestamp"].diff()
-    gap_indices = df_plot[time_diffs > pd.Timedelta(minutes=45)].index
+    gap_threshold = pd.Timedelta(hours=2) if span_h >= 72 else pd.Timedelta(minutes=45)
+    gap_indices = df_plot[time_diffs > gap_threshold].index
 
     if len(gap_indices) > 0:
         nan_rows = []
@@ -385,7 +415,7 @@ if df_all is not None and not df_all.empty:
     else:
         df_plot_lines = df_plot.copy()
 
-    # Precise Dynamic Labels & Arrow Anchors
+    # Adaptive Text Labels & Mini-Arrow Anchors
     speed_labels = [""] * len(df_plot_lines)
     gust_labels = [""] * len(df_plot_lines)
     labeled_speed_points = []
@@ -415,6 +445,11 @@ if df_all is not None and not df_all.empty:
         y_arr = df_plot_lines["velocita_plot_y"].to_numpy()
         t_arr = df_plot_lines["timestamp"].to_numpy()
 
+        # Step limits scale dynamically with duration to eliminate visual clutter
+        min_pts_step = 6 if span_h >= 168 else (4 if span_h >= 72 else 2)
+        max_pts_step = 20 if span_h >= 168 else (14 if span_h >= 72 else 8)
+        delta_threshold = 2.5 if span_h >= 72 else 1.0
+
         for idx in valid_indices[1:]:
             curr_v = v_arr[idx]
             curr_d = d_arr[idx]
@@ -423,7 +458,7 @@ if df_all is not None and not df_all.empty:
             delta_s = abs(curr_v - last_s_val)
             pts_since_s = idx - last_s_idx
 
-            if (delta_s >= 1.0 and pts_since_s >= 2) or pts_since_s >= 8:
+            if (delta_s >= delta_threshold and pts_since_s >= min_pts_step) or pts_since_s >= max_pts_step:
                 speed_labels[idx] = f"{curr_v:.1f}"
                 labeled_speed_points.append({
                     "timestamp": t_arr[idx],
@@ -436,7 +471,7 @@ if df_all is not None and not df_all.empty:
             if pd.notnull(curr_g):
                 delta_g = abs(curr_g - last_g_val)
                 pts_since_g = idx - last_g_idx
-                if (delta_g >= 1.0 and pts_since_g >= 2) or pts_since_g >= 8:
+                if (delta_g >= delta_threshold and pts_since_g >= min_pts_step) or pts_since_g >= max_pts_step:
                     gust_labels[idx] = f"{curr_g:.1f}"
                     last_g_val = curr_g
                     last_g_idx = idx
@@ -444,21 +479,23 @@ if df_all is not None and not df_all.empty:
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
 
-    # Micro-slice fast gradient interpolation
-    fill_segments = []
-    seg_start = 0
-    gap_pos = list(gap_indices) + [len(df_plot)]
-    for g_pos in gap_pos:
-        seg = df_plot.iloc[seg_start:g_pos]
-        if len(seg) >= 2:
-            seg_resampled = seg.set_index("timestamp")[["velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]].resample("2min").interpolate(method="time").reset_index()
-            fill_segments.append(seg_resampled)
-        elif len(seg) == 1:
-            fill_segments.append(seg[["timestamp", "velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]])
-        seg_start = g_pos
+    # Fast Gradient Fill Interpolation
+    if resample_rule is not None:
+        df_gradient_fill = df_plot.copy()
+    else:
+        fill_segments = []
+        seg_start = 0
+        gap_pos = list(gap_indices) + [len(df_plot)]
+        for g_pos in gap_pos:
+            seg = df_plot.iloc[seg_start:g_pos]
+            if len(seg) >= 2:
+                seg_resampled = seg.set_index("timestamp")[["velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]].resample("2min").interpolate(method="time").reset_index()
+                fill_segments.append(seg_resampled)
+            elif len(seg) == 1:
+                fill_segments.append(seg[["timestamp", "velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]])
+            seg_start = g_pos
 
-    df_gradient_fill = pd.concat(fill_segments, ignore_index=True) if fill_segments else df_plot.copy()
-    bar_width_ms = 2 * 60 * 1000
+        df_gradient_fill = pd.concat(fill_segments, ignore_index=True) if fill_segments else df_plot.copy()
 
     # 5. Multi-Panel Subplots
     fig = make_subplots(
@@ -520,7 +557,7 @@ if df_all is not None and not df_all.empty:
         name="Gust (Raffica)",
         connectgaps=False,
         line=dict(color="#0f172a", width=1.6, dash="dot"),
-        marker=dict(symbol="circle", size=4.0, color="#0f172a"),
+        marker=dict(symbol="circle", size=3.5 if span_h >= 72 else 4.0, color="#0f172a"),
         hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=1, col=1)
 
@@ -536,7 +573,7 @@ if df_all is not None and not df_all.empty:
         name="Wind Speed (Avg)",
         connectgaps=False,
         line=dict(color="#0f172a", width=2.2),
-        marker=dict(size=4.0, color="#0f172a"),
+        marker=dict(size=3.5 if span_h >= 72 else 4.0, color="#0f172a"),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
@@ -576,16 +613,16 @@ if df_all is not None and not df_all.empty:
         mode="markers",
         name="Direction",
         connectgaps=False,
-        marker=dict(symbol="circle", size=3.5, color="#64748b"),
+        marker=dict(symbol="circle", size=3.0 if span_h >= 72 else 3.5, color="#64748b"),
         customdata=df_plot_lines[["direzione_cardinal", "velocita_knots", "velocita_bft"]],
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=2, col=1)
 
-    # Subplot 2: Rotating Vector Arrows on Active Slice (36px stem)
+    # Subplot 2: Direction Arrows Throttled to Match Extended Horizon
     df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
-    steady_step = max(3, len(df_for_arrows) // 25)
+    steady_step = max(3, len(df_for_arrows) // (18 if span_h >= 72 else 25))
     selected_indices = []
     if not df_for_arrows.empty:
         selected_indices.append(0)
@@ -599,7 +636,8 @@ if df_all is not None and not df_all.empty:
             delta_deg = abs((curr_deg - last_deg + 180) % 360 - 180)
             points_since_last = i - last_idx
 
-            if delta_deg > 20.0 or points_since_last >= steady_step:
+            angle_sens = 35.0 if span_h >= 72 else 20.0
+            if delta_deg > angle_sens or points_since_last >= steady_step:
                 selected_indices.append(i)
                 last_idx = i
                 last_deg = curr_deg
@@ -650,7 +688,7 @@ if df_all is not None and not df_all.empty:
             name="Temp (Day: 06-19h)",
             connectgaps=False,
             line=dict(color="#eab308", width=2.2),
-            marker=dict(size=4, color="#eab308", line=dict(color="#ca8a04", width=1)),
+            marker=dict(size=3.5 if span_h >= 72 else 4, color="#eab308", line=dict(color="#ca8a04", width=1)),
             hovertemplate="<b>Temp (Day):</b> %{y:.1f} °C<extra></extra>"
         ), row=3, col=1)
 
@@ -662,7 +700,7 @@ if df_all is not None and not df_all.empty:
                 name="Temp (Night: 19-06h)",
                 connectgaps=False,
                 line=dict(color="#1e3a8a", width=2.2),
-                marker=dict(size=4, color="#1e3a8a", line=dict(color="#0f172a", width=1)),
+                marker=dict(size=3.5 if span_h >= 72 else 4, color="#1e3a8a", line=dict(color="#0f172a", width=1)),
                 hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
             ), row=3, col=1)
 
