@@ -41,26 +41,6 @@ def deg_to_cardinal(deg):
     ix = int(round(deg / (360.0 / len(dirs)))) % len(dirs)
     return dirs[ix]
 
-WIND_COLORSCALE_GUST = [
-    [0.00, "rgba(255, 255, 255, 0.25)"],
-    [0.22, "rgba(56, 189, 248, 0.30)"],
-    [0.40, "rgba(37, 99, 235, 0.35)"],
-    [0.55, "rgba(34, 197, 94, 0.40)"],
-    [0.70, "rgba(234, 179, 8, 0.45)"],
-    [0.85, "rgba(168, 85, 247, 0.50)"],
-    [1.00, "rgba(239, 68, 68, 0.55)"]
-]
-
-WIND_COLORSCALE_SPEED = [
-    [0.00, "rgba(255, 255, 255, 0.50)"],
-    [0.22, "rgba(56, 189, 248, 0.55)"],
-    [0.40, "rgba(37, 99, 235, 0.60)"],
-    [0.55, "rgba(34, 197, 94, 0.65)"],
-    [0.70, "rgba(234, 179, 8, 0.70)"],
-    [0.85, "rgba(168, 85, 247, 0.75)"],
-    [1.00, "rgba(239, 68, 68, 0.80)"]
-]
-
 def get_wg_badge(val):
     if pd.isna(val):
         return "#94a3b8", "#ffffff"
@@ -277,10 +257,8 @@ if df_all is not None and not df_all.empty:
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 6
 
-    # Minimum end time must strictly keep the left boundary within recorded history
     min_allowable_end = (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime()
     if min_allowable_end > t_global_max.to_pydatetime():
-        # If selected window span is wider than entire history, lock to global max
         min_allowable_end = t_global_max.to_pydatetime()
 
     ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns([1, 1, 1.3, 1.2, 1, 1])
@@ -362,20 +340,16 @@ if df_all is not None and not df_all.empty:
         st.warning("No records in selected window.")
         df_slice = df_all.tail(20).copy()
 
-    # --- Adaptive Density Resampling for Long Intervals ---
+    # Adaptive Resampling
     span_h = st.session_state.window_span_hours
-    if span_h >= 720:          # 30 Days: 2-hour buckets
+    if span_h >= 720:
         resample_rule = "2h"
-        interp_limit = 4
-    elif span_h >= 168:        # 7 Days: 30-minute buckets
+    elif span_h >= 168:
         resample_rule = "30min"
-        interp_limit = 4
-    elif span_h >= 72:         # 3 Days: 15-minute buckets
+    elif span_h >= 72:
         resample_rule = "15min"
-        interp_limit = 4
-    else:                      # <= 1 Day: Raw native data
+    else:
         resample_rule = None
-        interp_limit = 2
 
     if resample_rule is not None and not df_slice.empty:
         df_agg = df_slice.set_index("timestamp").resample(resample_rule).agg({
@@ -384,10 +358,9 @@ if df_all is not None and not df_all.empty:
             "direzione_deg": "mean",
             "temperatura_c": "mean"
         })
-        # Forward-interpolate small gaps up to interp_limit to avoid any white columns
-        df_resampled = df_agg.interpolate(method="time", limit=interp_limit).dropna(subset=["velocita_knots"]).reset_index()
-        df_resampled["direzione_cardinal"] = df_resampled["direzione_deg"].apply(deg_to_cardinal)
-        df_slice = df_resampled
+        # Continuous interpolation: fills any missing recording hours seamlessly
+        df_slice = df_agg.interpolate(method="time").bfill().ffill().reset_index()
+        df_slice["direzione_cardinal"] = df_slice["direzione_deg"].apply(deg_to_cardinal)
 
     df_slice["velocita_bft"] = knots_to_bft(df_slice["velocita_knots"])
     df_slice["raffica_bft"] = knots_to_bft(df_slice["raffica_knots"])
@@ -398,7 +371,7 @@ if df_all is not None and not df_all.empty:
     has_temp = "temperatura_c" in df_slice.columns and df_slice["temperatura_c"].notnull().any()
     df_plot_lines = df_slice.sort_values("timestamp").reset_index(drop=True)
 
-    # Dynamic Labels & Arrows
+    # Dynamic Labels & Arrow Vectors
     speed_labels = [""] * len(df_plot_lines)
     gust_labels = [""] * len(df_plot_lines)
     labeled_speed_points = []
@@ -429,7 +402,7 @@ if df_all is not None and not df_all.empty:
         t_arr = df_plot_lines["timestamp"].to_numpy()
 
         if span_h >= 720:
-            min_pts_step = 10
+            min_pts_step = 12
             max_pts_step = 30
             delta_threshold = 4.0
         elif span_h >= 168:
@@ -488,7 +461,7 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # Subplot 1: Continuous Seamless Area Fills
+    # Completely continuous, gapless area fill polygons (No Bar artifacts, no columns)
     fig.add_trace(go.Scatter(
         x=df_plot_lines["timestamp"],
         y=df_plot_lines["raffica_plot_y"],
@@ -685,8 +658,8 @@ if df_all is not None and not df_all.empty:
             row=3, col=1
         )
 
-    # Night Shading across Active Slice Window
-    if not daytime_only and not df_plot_lines.empty:
+    # Night Shading: ONLY enabled for 6h, 12h, and 24h views to eliminate striped vertical columns
+    if not daytime_only and span_h <= 24 and not df_plot_lines.empty:
         t_slice_min = df_plot_lines["timestamp"].min()
         t_slice_max = df_plot_lines["timestamp"].max()
         curr_day = t_slice_min.floor("D")
@@ -714,7 +687,7 @@ if df_all is not None and not df_all.empty:
     max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
     top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
 
-    # Subplot 1 Y-Axis: Beaufort Force
+    # Subplot 1 Y-Axis
     fig.update_yaxes(
         title_text="<b>Beaufort Force (Stretched)</b>",
         title_font=dict(color="#0f172a", size=12),
@@ -729,7 +702,7 @@ if df_all is not None and not df_all.empty:
         row=1, col=1
     )
 
-    # Subplot 2 Y-Axis: Direction
+    # Subplot 2 Y-Axis
     fig.update_yaxes(
         title_text="<b>Direction</b>",
         title_font=dict(color="#0f172a", size=12),
