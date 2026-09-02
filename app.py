@@ -638,9 +638,7 @@ if df_all is not None and not df_all.empty:
             title_text="<b>°C</b>",
             title_font=dict(color="#0f172a", size=12),
             tickfont=dict(color="#0f172a", size=11),
-            showline=True,
-            linecolor="#94a3b8",
-            linewidth=1.5,
+            showline=False,
             gridcolor="#cbd5e1",
             fixedrange=True,
             row=3, col=1
@@ -675,7 +673,7 @@ if df_all is not None and not df_all.empty:
     max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
     top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
 
-    # Subplot 1 Y-Axis: Beaufort Force (High-contrast slate text & distinct axis boundary)
+    # Subplot 1 Y-Axis: Beaufort Force
     fig.update_yaxes(
         title_text="<b>Beaufort Force (Stretched)</b>",
         title_font=dict(color="#0f172a", size=12),
@@ -683,17 +681,14 @@ if df_all is not None and not df_all.empty:
         tickvals=bft_stretched_vals,
         ticktext=bft_labels,
         tickfont=dict(color="#0f172a", size=11),
-        showline=True,
-        linecolor="#94a3b8",
-        linewidth=1.5,
+        showline=False,
         gridcolor="#cbd5e1",
-        zerolinecolor="#94a3b8",
-        zerolinewidth=1.5,
+        zerolinecolor="#cbd5e1",
         fixedrange=True,
         row=1, col=1
     )
 
-    # Subplot 2 Y-Axis: Direction (High-contrast slate text & boundary)
+    # Subplot 2 Y-Axis: Direction
     fig.update_yaxes(
         title_text="<b>Direction</b>",
         title_font=dict(color="#0f172a", size=12),
@@ -701,9 +696,7 @@ if df_all is not None and not df_all.empty:
         tickvals=[0, 90, 180, 270, 360],
         ticktext=["N (0°)", "E (90°)", "S (180°)", "W (270°)", "N (360°)"],
         tickfont=dict(color="#0f172a", size=11),
-        showline=True,
-        linecolor="#94a3b8",
-        linewidth=1.5,
+        showline=False,
         gridcolor="#cbd5e1",
         fixedrange=True,
         row=2, col=1
@@ -714,9 +707,7 @@ if df_all is not None and not df_all.empty:
         showgrid=True,
         range=[v_start, v_end],
         tickfont=dict(color="#0f172a", size=11),
-        showline=True,
-        linecolor="#94a3b8",
-        linewidth=1.5
+        showline=False
     )
 
     fig.update_layout(
