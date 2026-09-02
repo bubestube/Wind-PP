@@ -33,14 +33,15 @@ def bft_to_stretched(bft_val):
         return np.nan
     return math.pow(max(0.0, float(bft_val)), BFT_EXP)
 
+# Continuous Beaufort Color Scale for Area Fills (0 to 8+ Bft)
 WIND_COLORSCALE_GUST = [
-    [0.00, "rgba(255, 255, 255, 0.25)"],
-    [0.22, "rgba(56, 189, 248, 0.30)"],
-    [0.40, "rgba(37, 99, 235, 0.35)"],
-    [0.55, "rgba(34, 197, 94, 0.40)"],
-    [0.70, "rgba(234, 179, 8, 0.45)"],
-    [0.85, "rgba(168, 85, 247, 0.50)"],
-    [1.00, "rgba(239, 68, 68, 0.55)"]
+    [0.00, "rgba(255, 255, 255, 0.25)"],  # 0-1 Bft: Calm / Light
+    [0.22, "rgba(56, 189, 248, 0.30)"],   # 2-3 Bft: Light/Gentle Breeze
+    [0.40, "rgba(37, 99, 235, 0.35)"],    # 4 Bft: Moderate Breeze
+    [0.55, "rgba(34, 197, 94, 0.40)"],    # 5 Bft: Fresh Breeze
+    [0.70, "rgba(234, 179, 8, 0.45)"],    # 6 Bft: Strong Breeze
+    [0.85, "rgba(168, 85, 247, 0.50)"],   # 7 Bft: Near Gale
+    [1.00, "rgba(239, 68, 68, 0.55)"]     # 8+ Bft: Gale / Storm
 ]
 
 WIND_COLORSCALE_SPEED = [
@@ -95,17 +96,6 @@ st.markdown("""
         font-size: 1.6rem;
         font-weight: 700;
         font-family: monospace;
-    }
-    /* Mobile-optimized touch handling */
-    div[data-testid="stPlotlyChart"] {
-        touch-action: pan-y !important;
-        -webkit-user-select: none !important;
-        user-select: none !important;
-    }
-    div.stButton > button {
-        min-height: 44px;
-        font-size: 15px;
-        font-weight: 600;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -180,54 +170,55 @@ if df_all is not None and not df_all.empty:
 
     st.write("")
 
-    # 3. Dynamic Timeline Navigation & Touch Zoom Controls
+    # 3. Dynamic Timeline Navigation & Window Scrubber
     if "window_end_time" not in st.session_state:
         st.session_state.window_end_time = t_global_max.to_pydatetime()
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 6
 
-    # Touch-Friendly Buttons for Mobile & iPad
-    tb1, tb2, tb3, tb4, tb5, tb6 = st.columns([1, 1, 1, 1, 1.2, 1.2])
-
-    with tb1:
-        if st.button("🔍 In (+)", help="Zoom in (decrease time span)"):
-            st.session_state.window_span_hours = max(2, int(st.session_state.window_span_hours * 0.6))
-            st.rerun()
-    with tb2:
-        if st.button("🔍 Out (-)", help="Zoom out (increase time span)"):
-            st.session_state.window_span_hours = min(168, int(st.session_state.window_span_hours * 1.6))
-            st.rerun()
-    with tb3:
-        if st.button("◀ Back"):
-            step = max(2, int(st.session_state.window_span_hours * 0.5))
+    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns([1, 1, 1.3, 1.2, 1, 1])
+    with ctrl_col1:
+        if st.button("◀ -1 Day"):
             st.session_state.window_end_time = max(
                 (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime(),
-                st.session_state.window_end_time - datetime.timedelta(hours=step)
+                st.session_state.window_end_time - datetime.timedelta(days=1)
             )
             st.rerun()
-    with tb4:
-        if st.button("Forward ▶"):
-            step = max(2, int(st.session_state.window_span_hours * 0.5))
+    with ctrl_col2:
+        if st.button("◀ -6 Hours"):
+            st.session_state.window_end_time = max(
+                (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime(),
+                st.session_state.window_end_time - datetime.timedelta(hours=6)
+            )
+            st.rerun()
+    with ctrl_col3:
+        st.session_state.window_span_hours = st.selectbox(
+            "Window Width:",
+            options=[6, 12, 24, 72, 168],
+            index=0,
+            format_func=lambda h: f"{h} Hours" if h < 24 else f"{h//24} Day{'s' if h > 24 else ''}"
+        )
+    with ctrl_col4:
+        daytime_only = st.checkbox("☀️ Daytime Only (06-19h)", value=False)
+    with ctrl_col5:
+        if st.button("+6 Hours ▶"):
             st.session_state.window_end_time = min(
                 t_global_max.to_pydatetime(),
-                st.session_state.window_end_time + datetime.timedelta(hours=step)
+                st.session_state.window_end_time + datetime.timedelta(hours=6)
             )
             st.rerun()
-    with tb5:
-        if st.button("🔴 Reset/Live"):
+    with ctrl_col6:
+        if st.button("🔴 Live Latest"):
             st.session_state.window_end_time = t_global_max.to_pydatetime()
-            st.session_state.window_span_hours = 6
             st.rerun()
-    with tb6:
-        daytime_only = st.checkbox("☀️ 06-19h", value=False)
 
-    # Timeline Scrubber Slider
+    # High-precision Timeline Slider for Continuous Scrolling
     min_slider = (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime()
     max_slider = t_global_max.to_pydatetime()
 
     if min_slider < max_slider:
         selected_end = st.slider(
-            "Timeline Scrubber (Drag single finger to scroll through history):",
+            "Scroll Active Timeline Window:",
             min_value=min_slider,
             max_value=max_slider,
             value=st.session_state.window_end_time,
@@ -239,7 +230,7 @@ if df_all is not None and not df_all.empty:
     v_end = pd.to_datetime(st.session_state.window_end_time)
     v_start = v_end - pd.Timedelta(hours=st.session_state.window_span_hours)
 
-    # 4. Slice Data for Active Window
+    # 4. SLICE ONLY THE REQUESTED TIME WINDOW ON DEMAND
     df_slice = df_all[(df_all["timestamp"] >= v_start) & (df_all["timestamp"] <= v_end)].copy()
 
     if daytime_only:
@@ -249,6 +240,7 @@ if df_all is not None and not df_all.empty:
         st.warning("No records in selected window.")
         df_slice = df_all.tail(20).copy()
 
+    # Calculations on the micro-slice only (<50-60 points)
     df_slice["velocita_bft"] = knots_to_bft(df_slice["velocita_knots"])
     df_slice["raffica_bft"] = knots_to_bft(df_slice["raffica_knots"])
     df_slice["velocita_plot_y"] = bft_to_stretched(df_slice["velocita_bft"])
@@ -282,7 +274,7 @@ if df_all is not None and not df_all.empty:
     else:
         df_plot_lines = df_plot.copy()
 
-    # Dynamic Labels & Arrows
+    # Precise Dynamic Labels & Arrow Anchors
     speed_labels = [""] * len(df_plot_lines)
     gust_labels = [""] * len(df_plot_lines)
     labeled_speed_points = []
@@ -341,7 +333,7 @@ if df_all is not None and not df_all.empty:
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
 
-    # Fast Gradient Interpolation
+    # Micro-slice fast gradient interpolation
     fill_segments = []
     seg_start = 0
     gap_pos = list(gap_indices) + [len(df_plot)]
@@ -371,7 +363,7 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # Subplot 1: Gust Gradient Area
+    # Subplot 1: Gust Gradient Fill Area
     fig.add_trace(go.Bar(
         x=df_gradient_fill["timestamp"],
         y=df_gradient_fill["raffica_plot_y"],
@@ -388,7 +380,7 @@ if df_all is not None and not df_all.empty:
         name="Gust Gradient Fill"
     ), row=1, col=1)
 
-    # Subplot 1: Speed Gradient Area
+    # Subplot 1: Sustained Speed Gradient Fill Area
     fig.add_trace(go.Bar(
         x=df_gradient_fill["timestamp"],
         y=df_gradient_fill["velocita_plot_y"],
@@ -405,7 +397,7 @@ if df_all is not None and not df_all.empty:
         name="Speed Gradient Fill"
     ), row=1, col=1)
 
-    # Subplot 1: Gust Line
+    # Subplot 1: Gust Trace
     fig.add_trace(go.Scatter(
         x=df_plot_lines["timestamp"],
         y=df_plot_lines["raffica_plot_y"],
@@ -421,7 +413,7 @@ if df_all is not None and not df_all.empty:
         hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=1, col=1)
 
-    # Subplot 1: Sustained Speed Line
+    # Subplot 1: Sustained Speed Trace
     fig.add_trace(go.Scatter(
         x=df_plot_lines["timestamp"],
         y=df_plot_lines["velocita_plot_y"],
@@ -437,7 +429,7 @@ if df_all is not None and not df_all.empty:
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
-    # Subplot 1: 18px Stem / 1.35 Head Vector Arrows
+    # Subplot 1: Exact Angulation Stemmed Vector Arrows
     mini_arrow_len = 18
     for pt in labeled_speed_points:
         deg = pt["direzione_deg"]
@@ -478,7 +470,7 @@ if df_all is not None and not df_all.empty:
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=2, col=1)
 
-    # Subplot 2: Direction Flow Arrows
+    # Subplot 2: Rotating Vector Arrows on Active Slice
     df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
@@ -565,7 +557,7 @@ if df_all is not None and not df_all.empty:
 
         fig.update_yaxes(title_text="°C", row=3, col=1, gridcolor="#e2e8f0", fixedrange=True)
 
-    # Night Shading
+    # Night Shading across Active Slice Window
     if not daytime_only and not df_plot_lines.empty:
         t_slice_min = df_plot_lines["timestamp"].min()
         t_slice_max = df_plot_lines["timestamp"].max()
@@ -641,7 +633,7 @@ if df_all is not None and not df_all.empty:
         margin=dict(l=35, r=20, t=50, b=30)
     )
 
-    # 6. Render Chart with Active Touch Controls
+    # 6. Render Chart
     st.plotly_chart(
         fig,
         use_container_width=True,
