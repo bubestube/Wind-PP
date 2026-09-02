@@ -549,8 +549,7 @@ customdata=df_plot_lines[["direzione_cardinal", "velocita_knots", "velocita_bft"
 hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
 ), row=2, col=1)
 
-    # Subplot 2: Rotating Vector Arrows on Active Slice
-    # Subplot 2: Rotating Vector Arrows on Active Slice (Shorter stem)
+# Subplot 2: Rotating Vector Arrows on Active Slice
 df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
 df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
@@ -574,8 +573,7 @@ last_idx = i
 last_deg = curr_deg
 
 df_sub = df_for_arrows.iloc[selected_indices]
-    arrow_length_px = 60
-    arrow_length_px = 36  # Shortened from 60px
+arrow_length_px = 60
 
 for _, row_data in df_sub.iterrows():
 angle_deg = row_data["arrow_angle"]
@@ -636,15 +634,16 @@ marker=dict(size=4, color="#1e3a8a", line=dict(color="#0f172a", width=1)),
 hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
 ), row=3, col=1)
 
-fig.update_yaxes(
-title_text="<b>°C</b>",
-title_font=dict(color="#0f172a", size=12),
-tickfont=dict(color="#0f172a", size=11),
-showline=False,
-gridcolor="#cbd5e1",
-fixedrange=True,
-row=3, col=1
-)
+        fig.update_yaxes(title_text="°C", row=3, col=1, gridcolor="#e2e8f0", fixedrange=True)
+        fig.update_yaxes(
+            title_text="<b>°C</b>",
+            title_font=dict(color="#0f172a", size=12),
+            tickfont=dict(color="#0f172a", size=11),
+            showline=False,
+            gridcolor="#cbd5e1",
+            fixedrange=True,
+            row=3, col=1
+        )
 
 # Night Shading across Active Slice Window
 if not daytime_only and not df_plot_lines.empty:
@@ -675,41 +674,50 @@ bft_labels = [
 max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
 top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
 
-# Subplot 1 Y-Axis: Beaufort Force
+    # Subplot 1 Y-Axis: Beaufort Force
 fig.update_yaxes(
 title_text="<b>Beaufort Force (Stretched)</b>",
-title_font=dict(color="#0f172a", size=12),
+        title_font=dict(color="#0f172a", size=12),
 range=[0, top_y_limit],
 tickvals=bft_stretched_vals,
 ticktext=bft_labels,
-tickfont=dict(color="#0f172a", size=11),
-showline=False,
-gridcolor="#cbd5e1",
+        row=1, col=1,
+        gridcolor="#e2e8f0",
+        tickfont=dict(color="#0f172a", size=11),
+        showline=False,
+        gridcolor="#cbd5e1",
 zerolinecolor="#cbd5e1",
-fixedrange=True,
-row=1, col=1
+        fixedrange=True
+        fixedrange=True,
+        row=1, col=1
 )
 
-# Subplot 2 Y-Axis: Direction
+    # Subplot 2 Y-Axis: Direction
 fig.update_yaxes(
-title_text="<b>Direction</b>",
-title_font=dict(color="#0f172a", size=12),
+        title_text="Direction",
+        title_text="<b>Direction</b>",
+        title_font=dict(color="#0f172a", size=12),
 range=[-35, 395],
 tickvals=[0, 90, 180, 270, 360],
 ticktext=["N (0°)", "E (90°)", "S (180°)", "W (270°)", "N (360°)"],
-tickfont=dict(color="#0f172a", size=11),
-showline=False,
-gridcolor="#cbd5e1",
-fixedrange=True,
-row=2, col=1
+        row=2, col=1,
+        gridcolor="#e2e8f0",
+        fixedrange=True
+        tickfont=dict(color="#0f172a", size=11),
+        showline=False,
+        gridcolor="#cbd5e1",
+        fixedrange=True,
+        row=2, col=1
 )
 
 fig.update_xaxes(
-gridcolor="#cbd5e1",
+        gridcolor="#e2e8f0",
+        gridcolor="#cbd5e1",
 showgrid=True,
-range=[v_start, v_end],
-tickfont=dict(color="#0f172a", size=11),
-showline=False
+        range=[v_start, v_end]
+        range=[v_start, v_end],
+        tickfont=dict(color="#0f172a", size=11),
+        showline=False
 )
 
 fig.update_layout(
