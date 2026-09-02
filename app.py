@@ -123,41 +123,56 @@ st.markdown("""
         color: inherit !important;
     }
 
-    /* 2. Window Width Dropdown -> Force Light Grey Fill Everywhere */
+    /* 2. Window Width Dropdown -> Override Streamlit Root Variables & Elements */
+    div[data-testid="stSelectbox"] {
+        --secondary-background-color: #f1f5f9 !important;
+        --background-color: #f1f5f9 !important;
+        --text-color: #0f172a !important;
+    }
     div[data-testid="stSelectbox"] label p {
         color: #475569 !important;
         font-weight: 600 !important;
     }
-    /* Target outer box and all child divs */
+    /* Force control container & combobox background */
     div[data-testid="stSelectbox"] div[data-baseweb="select"],
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] * {
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+    div[data-testid="stSelectbox"] div[role="combobox"],
+    div[data-testid="stSelectbox"] [class*="StyledControl"],
+    div[data-testid="stSelectbox"] [class*="StyledValueContainer"] {
         background-color: #f1f5f9 !important;
+        background: #f1f5f9 !important;
         color: #0f172a !important;
-        fill: #0f172a !important;
-    }
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
-        background-color: #f1f5f9 !important;
-        border: 1px solid #cbd5e1 !important;
+        border-color: #cbd5e1 !important;
         border-radius: 6px !important;
     }
-    /* Value display text inside selectbox */
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] [aria-selected="true"],
-    div[data-testid="stSelectbox"] div[role="combobox"] {
-        background-color: #f1f5f9 !important;
+    /* Force inner texts, SVG arrows and dropdown icons */
+    div[data-testid="stSelectbox"] * {
         color: #0f172a !important;
+        fill: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
     }
-    /* Popover Menu Options for Selectbox (rendered in portal at body root) */
+
+    /* Portal Menu (When Dropdown Opens) */
     div[data-baseweb="popover"],
     div[data-baseweb="popover"] > div,
-    div[data-baseweb="popover"] ul,
-    div[data-baseweb="popover"] li {
+    ul[data-baseweb="menu"],
+    li[data-baseweb="menu-item"] {
         background-color: #f1f5f9 !important;
+        background: #f1f5f9 !important;
         color: #0f172a !important;
     }
-    div[data-baseweb="popover"] li:hover,
-    div[data-baseweb="popover"] li[aria-selected="true"] {
+    li[data-baseweb="menu-item"] * {
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+    }
+    li[data-baseweb="menu-item"]:hover,
+    li[data-baseweb="menu-item"][aria-selected="true"] {
         background-color: #e2e8f0 !important;
         color: #0284c7 !important;
+    }
+    li[data-baseweb="menu-item"]:hover * {
+        color: #0284c7 !important;
+        -webkit-text-fill-color: #0284c7 !important;
     }
 
     /* 3. Daytime Only Control -> Solid White Fill */
