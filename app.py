@@ -251,55 +251,17 @@ if df_all is not None and not df_all.empty:
 
     st.write("")
 
-    # 3. Controls & Timeline Window Navigation
+    # 3. Dynamic Timeline Navigation & Window Scrubber
     if "window_end_time" not in st.session_state:
         st.session_state.window_end_time = t_global_max.to_pydatetime()
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 6
 
-    window_options = [6, 12, 24, 72, 168, 720]
-    curr_span = st.session_state.get("window_span_hours", 6)
-    curr_idx = window_options.index(curr_span) if curr_span in window_options else 0
-
-    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns([1, 1, 1.3, 1.2, 1, 1])
-    with ctrl_col3:
-        selected_span = st.selectbox(
-            "Window Width:",
-            options=window_options,
-            index=curr_idx,
-            key="span_selector",
-            format_func=lambda h: f"{h} Hours" if h < 24 else f"{h//24} Day{'s' if h > 24 else ''}"
-        )
-        if selected_span != st.session_state.window_span_hours:
-            st.session_state.window_span_hours = selected_span
-            if selected_span == 72:
-                curr_t = pd.to_datetime(st.session_state.window_end_time)
-                st.session_state.window_end_time = curr_t.floor("20min").to_pydatetime()
-
-    span_h = st.session_state.window_span_hours
-
-    # Enforce strict 20-minute bucket and axis ticks for 3 Days
-    if span_h == 72:
-        resample_rule = "20min"
-        slider_step_delta = datetime.timedelta(minutes=20)
-        axis_dtick_ms = 20 * 60 * 1000  # Exactly 20-minute ticks (:00, :20, :40)
-    elif span_h == 168:
-        resample_rule = "30min"
-        slider_step_delta = datetime.timedelta(minutes=30)
-        axis_dtick_ms = 60 * 60 * 1000  # Hourly ticks
-    elif span_h >= 720:
-        resample_rule = "2h"
-        slider_step_delta = datetime.timedelta(hours=2)
-        axis_dtick_ms = 6 * 60 * 60 * 1000  # 6-hour ticks
-    else:
-        resample_rule = None
-        slider_step_delta = datetime.timedelta(minutes=15)
-        axis_dtick_ms = None
-
-    min_allowable_end = (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime()
+    min_allowable_end = (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime()
     if min_allowable_end > t_global_max.to_pydatetime():
         min_allowable_end = t_global_max.to_pydatetime()
 
+    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns([1, 1, 1.3, 1.2, 1, 1])
     with ctrl_col1:
         if st.button("◀ -1 Day"):
             st.session_state.window_end_time = max(
@@ -314,6 +276,13 @@ if df_all is not None and not df_all.empty:
                 st.session_state.window_end_time - datetime.timedelta(hours=6)
             )
             st.rerun()
+    with ctrl_col3:
+        st.session_state.window_span_hours = st.selectbox(
+            "Window Width:",
+            options=[6, 12, 24, 72, 168, 720],
+            index=0,
+            format_func=lambda h: f"{h} Hours" if h < 24 else f"{h//24} Day{'s' if h > 24 else ''}"
+        )
     with ctrl_col4:
         daytime_only = st.checkbox("☀️ Daytime Only (06-19h)", value=False)
     with ctrl_col5:
@@ -330,7 +299,7 @@ if df_all is not None and not df_all.empty:
 
     # Active Month Pill
     cur_end_preview = pd.to_datetime(st.session_state.window_end_time)
-    cur_start_preview = cur_end_preview - pd.Timedelta(hours=span_h)
+    cur_start_preview = cur_end_preview - pd.Timedelta(hours=st.session_state.window_span_hours)
     if cur_start_preview.strftime("%B %Y") == cur_end_preview.strftime("%B %Y"):
         active_month_str = cur_end_preview.strftime("%B %Y")
     elif cur_start_preview.year == cur_end_preview.year:
@@ -339,7 +308,7 @@ if df_all is not None and not df_all.empty:
         active_month_str = f"{cur_start_preview.strftime('%B %Y')} – {cur_end_preview.strftime('%B %Y')}"
 
     st.markdown(
-        f'<div class="slider-month-pill">📅 <span>{active_month_str}</span> (Step & Bucket: {resample_rule if resample_rule else "Native ~3m"})</div>',
+        f'<div class="slider-month-pill">📅 <span>{active_month_str}</span></div>',
         unsafe_allow_html=True
     )
 
@@ -354,16 +323,14 @@ if df_all is not None and not df_all.empty:
             max_value=max_slider,
             value=min(max_slider, max(min_slider, st.session_state.window_end_time)),
             format="DD.MM HH:mm",
-            step=slider_step_delta
+            step=datetime.timedelta(minutes=15)
         )
         st.session_state.window_end_time = selected_end
 
     v_end = pd.to_datetime(st.session_state.window_end_time)
-    if span_h == 72:
-        v_end = v_end.floor("20min")
-    v_start = v_end - pd.Timedelta(hours=span_h)
+    v_start = v_end - pd.Timedelta(hours=st.session_state.window_span_hours)
 
-    # 4. SLICE & STRICT 20-MINUTE REINDEXING
+    # 4. SLICE ONLY THE REQUESTED TIME WINDOW ON DEMAND
     df_slice = df_all[(df_all["timestamp"] >= v_start) & (df_all["timestamp"] <= v_end)].copy()
 
     if daytime_only:
@@ -373,24 +340,37 @@ if df_all is not None and not df_all.empty:
         st.warning("No records in selected window.")
         df_slice = df_all.tail(20).copy()
 
-    if resample_rule is not None and not df_slice.empty:
-        df_slice["timestamp"] = df_slice["timestamp"].dt.round("1min")
-        df_slice = df_slice.drop_duplicates(subset=["timestamp"]).sort_values("timestamp")
+    # --- 20-Minute / Adaptive Continuous Grid Alignment ---
+    span_h = st.session_state.window_span_hours
+    if span_h >= 720:
+        resample_rule = "2h"
+    elif span_h >= 168:
+        resample_rule = "30min"
+    elif span_h >= 72:
+        resample_rule = "20min"  # 20-minute interval for 3-day view
+    else:
+        resample_rule = None
 
-        # Explicit Resampling onto 20-minute (:00, :20, :40) bins
-        df_binned = df_slice.set_index("timestamp").resample(resample_rule).agg({
+    if resample_rule is not None and not df_slice.empty:
+        # Resample onto regular interval bins
+        df_agg = df_slice.set_index("timestamp").resample(resample_rule).agg({
             "velocita_knots": "mean",
             "raffica_knots": "max",
             "direzione_deg": "mean",
             "temperatura_c": "mean"
         })
-
-        # Complete contiguous grid from v_start to v_end
-        continuous_grid = pd.date_range(start=v_start, end=v_end, freq=resample_rule)
-        df_grid = df_binned.reindex(continuous_grid).interpolate(method="time").bfill().ffill().reset_index()
-        df_grid.rename(columns={"index": "timestamp"}, inplace=True)
-        df_grid["direzione_cardinal"] = df_grid["direzione_deg"].apply(deg_to_cardinal)
-        df_slice = df_grid
+        
+        # Build an exact, unbroken date range spanning the current window
+        grid_index = pd.date_range(
+            start=max(v_start, df_slice["timestamp"].min()).floor(resample_rule),
+            end=min(v_end, df_slice["timestamp"].max()).ceil(resample_rule),
+            freq=resample_rule
+        )
+        # Reindex onto the uniform grid and interpolate linearly over time
+        df_continuous = df_agg.reindex(grid_index).interpolate(method="time").bfill().ffill().reset_index()
+        df_continuous.rename(columns={"index": "timestamp"}, inplace=True)
+        df_continuous["direzione_cardinal"] = df_continuous["direzione_deg"].apply(deg_to_cardinal)
+        df_slice = df_continuous
 
     df_slice["velocita_bft"] = knots_to_bft(df_slice["velocita_knots"])
     df_slice["raffica_bft"] = knots_to_bft(df_slice["raffica_knots"])
@@ -401,7 +381,7 @@ if df_all is not None and not df_all.empty:
     has_temp = "temperatura_c" in df_slice.columns and df_slice["temperatura_c"].notnull().any()
     df_plot_lines = df_slice.sort_values("timestamp").reset_index(drop=True)
 
-    # Dynamic Labels & Arrow Anchors
+    # Dynamic Labels & Arrow Vectors
     speed_labels = [""] * len(df_plot_lines)
     gust_labels = [""] * len(df_plot_lines)
     labeled_speed_points = []
@@ -491,7 +471,7 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # 100% Contiguous Area Fills
+    # Completely continuous, gapless area fill polygons (No Bar artifacts, no columns)
     fig.add_trace(go.Scatter(
         x=df_plot_lines["timestamp"],
         y=df_plot_lines["raffica_plot_y"],
@@ -591,7 +571,7 @@ if df_all is not None and not df_all.empty:
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=2, col=1)
 
-    # Subplot 2: Direction Arrows
+    # Subplot 2: Direction Arrows Throttled to Match Horizon
     df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
@@ -688,24 +668,6 @@ if df_all is not None and not df_all.empty:
             row=3, col=1
         )
 
-    # Night Shading: Only on <= 24h windows
-    if not daytime_only and span_h <= 24 and not df_plot_lines.empty:
-        t_slice_min = df_plot_lines["timestamp"].min()
-        t_slice_max = df_plot_lines["timestamp"].max()
-        curr_day = t_slice_min.floor("D")
-        while curr_day <= t_slice_max:
-            night_start = curr_day + pd.Timedelta(hours=19)
-            night_end = curr_day + pd.Timedelta(days=1, hours=6)
-            if night_end >= t_slice_min and night_start <= t_slice_max:
-                fig.add_vrect(
-                    x0=max(night_start, t_slice_min),
-                    x1=min(night_end, t_slice_max),
-                    fillcolor="rgba(15, 23, 42, 0.04)",
-                    layer="below",
-                    line_width=0
-                )
-            curr_day += pd.Timedelta(days=1)
-
     # Axis Calibrations
     bft_ticks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     bft_stretched_vals = [bft_to_stretched(b) for b in bft_ticks]
@@ -746,19 +708,13 @@ if df_all is not None and not df_all.empty:
         row=2, col=1
     )
 
-    # Explicit X-Axis dtick: strictly locks Plotly to 20-minute ticks
-    x_axis_kwargs = dict(
+    fig.update_xaxes(
         gridcolor="#cbd5e1",
         showgrid=True,
         range=[v_start, v_end],
         tickfont=dict(color="#0f172a", size=11),
         showline=False
     )
-    if axis_dtick_ms is not None:
-        x_axis_kwargs["dtick"] = axis_dtick_ms
-        x_axis_kwargs["tick0"] = v_start
-
-    fig.update_xaxes(**x_axis_kwargs)
 
     fig.update_layout(
         height=780 if has_temp else 600,
