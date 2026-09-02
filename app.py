@@ -106,7 +106,7 @@ st.markdown("""
         font-family: monospace;
     }
 
-    /* 1. All Navigation & Action Buttons -> Solid White Fill */
+    /* 1. White Buttons */
     div.stButton > button,
     div.stButton > button:hover,
     div.stButton > button:focus,
@@ -131,7 +131,7 @@ st.markdown("""
         color: inherit !important;
     }
 
-    /* 2. Window Width Dropdown -> Light Grey Fill */
+    /* 2. Window Width Dropdown */
     div[data-testid="stSelectbox"] label p {
         color: #475569 !important;
         font-weight: 600 !important;
@@ -149,7 +149,6 @@ st.markdown("""
         color: #0f172a !important;
         fill: #0f172a !important;
     }
-    /* Popover Menu Options for Selectbox */
     div[data-baseweb="popover"] ul,
     div[data-baseweb="popover"] li {
         background-color: #f1f5f9 !important;
@@ -161,7 +160,7 @@ st.markdown("""
         color: #0284c7 !important;
     }
 
-    /* 3. Daytime Only Control -> Solid White Fill */
+    /* 3. Daytime Only Control */
     div[data-testid="stCheckbox"] {
         background-color: #ffffff !important;
         border: 1px solid #cbd5e1 !important;
@@ -185,7 +184,7 @@ st.markdown("""
         margin: 0 !important;
     }
 
-    /* 4. Month Reading Pill above Slider */
+    /* 4. Month Reading Pill */
     .slider-month-pill {
         display: inline-flex;
         align-items: center;
@@ -330,7 +329,17 @@ if df_all is not None and not df_all.empty:
         unsafe_allow_html=True
     )
 
-    # High-precision Timeline Slider for Continuous Scrolling
+    span_h = st.session_state.window_span_hours
+    if span_h >= 720:
+        slider_step = datetime.timedelta(hours=2)
+    elif span_h >= 168:
+        slider_step = datetime.timedelta(minutes=30)
+    elif span_h >= 72:
+        slider_step = datetime.timedelta(minutes=20)
+    else:
+        slider_step = datetime.timedelta(minutes=15)
+
+    # Timeline Slider
     min_slider = (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime()
     max_slider = t_global_max.to_pydatetime()
 
@@ -341,7 +350,7 @@ if df_all is not None and not df_all.empty:
             max_value=max_slider,
             value=st.session_state.window_end_time,
             format="DD.MM HH:mm",
-            step=datetime.timedelta(minutes=15)
+            step=slider_step
         )
         st.session_state.window_end_time = selected_end
 
@@ -358,30 +367,23 @@ if df_all is not None and not df_all.empty:
         st.warning("No records in selected window.")
         df_slice = df_all.tail(20).copy()
 
-    # --- Adaptive Density Reduction & Continuous Grid Setup ---
-    span_h = st.session_state.window_span_hours
-    if span_h >= 720:          # 30 Days: 2-hour buckets
+    # --- Resampling Rule for Trace Markers and Metric Points ---
+    if span_h >= 720:
         resample_rule = "2h"
-        bar_width_ms = int(2.05 * 60 * 60 * 1000)
-    elif span_h >= 168:        # 7 Days: 30-minute buckets
+    elif span_h >= 168:
         resample_rule = "30min"
-        bar_width_ms = int(30.8 * 60 * 1000)
-    elif span_h >= 72:         # 3 Days: 15-minute buckets
-        resample_rule = "15min"
-        bar_width_ms = int(15.4 * 60 * 1000)
-    else:                      # <= 1 Day: Native resolution
+    elif span_h >= 72:
+        resample_rule = "20min"
+    else:
         resample_rule = None
-        bar_width_ms = int(2.2 * 60 * 1000)
 
     if resample_rule is not None and not df_slice.empty:
-        # Resample on continuous grid
         df_agg = df_slice.set_index("timestamp").resample(resample_rule).agg({
             "velocita_knots": "mean",
             "raffica_knots": "max",
             "direzione_deg": "mean",
             "temperatura_c": "mean"
         })
-        # Interpolate small reporting gaps (up to 3 periods) so bars are seamlessly continuous
         df_resampled = df_agg.interpolate(method="time", limit=3).dropna(subset=["velocita_knots"]).reset_index()
         df_resampled["direzione_cardinal"] = df_resampled["direzione_deg"].apply(deg_to_cardinal)
         df_slice = df_resampled
@@ -502,16 +504,38 @@ if df_all is not None and not df_all.empty:
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
 
-    # Fast Gradient Fill Interpolation (Produces uniform, gapless gradient strips)
+    # --- Ultra-Smooth Gradient Area Micro-Interpolation ---
+    # Downsample lines for readability, but interpolate the area gradient tightly to remove blocky steps
+    if span_h >= 720:
+        fill_step_min = 6
+    elif span_h >= 168:
+        fill_step_min = 3
+    elif span_h >= 72:
+        fill_step_min = 2
+    else:
+        fill_step_min = 1
+
+    interp_freq = f"{fill_step_min}min"
+    bar_width_ms = int(fill_step_min * 60 * 1000 * 1.08)
+
     fill_segments = []
     seg_start = 0
     gap_pos = list(gap_indices) + [len(df_plot)]
-    interp_freq = "2min" if resample_rule is None else resample_rule
 
     for g_pos in gap_pos:
         seg = df_plot.iloc[seg_start:g_pos]
         if len(seg) >= 2:
-            seg_resampled = seg.set_index("timestamp")[["velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]].resample(interp_freq).interpolate(method="time").reset_index()
+            seg_resampled = (
+                seg.set_index("timestamp")[["velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]]
+                .resample(interp_freq)
+                .interpolate(method="pchip")  # Piecewise Cubic Hermite for ultra-smooth curve without overshoot
+                .reset_index()
+            )
+            # Clip interpolated Beaufort values within sensible bounds
+            seg_resampled["velocita_bft"] = seg_resampled["velocita_bft"].clip(lower=0)
+            seg_resampled["raffica_bft"] = seg_resampled["raffica_bft"].clip(lower=0)
+            seg_resampled["velocita_plot_y"] = seg_resampled["velocita_plot_y"].clip(lower=0)
+            seg_resampled["raffica_plot_y"] = seg_resampled["raffica_plot_y"].clip(lower=0)
             fill_segments.append(seg_resampled)
         elif len(seg) == 1:
             fill_segments.append(seg[["timestamp", "velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]])
@@ -533,7 +557,7 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # Subplot 1: Gust Gradient Fill Area
+    # Subplot 1: Gust Gradient Fill Area (Smoothed micro-bins)
     fig.add_trace(go.Bar(
         x=df_gradient_fill["timestamp"],
         y=df_gradient_fill["raffica_plot_y"],
@@ -551,7 +575,7 @@ if df_all is not None and not df_all.empty:
         name="Gust Gradient Fill"
     ), row=1, col=1)
 
-    # Subplot 1: Sustained Speed Gradient Fill Area
+    # Subplot 1: Sustained Speed Gradient Fill Area (Smoothed micro-bins)
     fig.add_trace(go.Bar(
         x=df_gradient_fill["timestamp"],
         y=df_gradient_fill["velocita_plot_y"],
@@ -569,7 +593,7 @@ if df_all is not None and not df_all.empty:
         name="Speed Gradient Fill"
     ), row=1, col=1)
 
-    # Subplot 1: Gust Trace
+    # Subplot 1: Gust Trace with Spline Smoothing
     fig.add_trace(go.Scatter(
         x=df_plot_lines["timestamp"],
         y=df_plot_lines["raffica_plot_y"],
@@ -580,12 +604,12 @@ if df_all is not None and not df_all.empty:
         mode="lines+markers+text",
         name="Gust (Raffica)",
         connectgaps=False,
-        line=dict(color="#0f172a", width=1.4 if span_h >= 720 else 1.6, dash="dot"),
+        line=dict(color="#0f172a", width=1.4 if span_h >= 720 else 1.6, dash="dot", shape="spline", smoothing=0.85),
         marker=dict(symbol="circle", size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
         hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=1, col=1)
 
-    # Subplot 1: Sustained Speed Trace
+    # Subplot 1: Sustained Speed Trace with Spline Smoothing
     fig.add_trace(go.Scatter(
         x=df_plot_lines["timestamp"],
         y=df_plot_lines["velocita_plot_y"],
@@ -596,7 +620,7 @@ if df_all is not None and not df_all.empty:
         mode="lines+markers+text",
         name="Wind Speed (Avg)",
         connectgaps=False,
-        line=dict(color="#0f172a", width=1.8 if span_h >= 720 else 2.2),
+        line=dict(color="#0f172a", width=1.8 if span_h >= 720 else 2.2, shape="spline", smoothing=0.85),
         marker=dict(size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
@@ -712,7 +736,7 @@ if df_all is not None and not df_all.empty:
             mode="lines+markers",
             name="Temp (Day: 06-19h)",
             connectgaps=False,
-            line=dict(color="#eab308", width=1.8 if span_h >= 720 else 2.2),
+            line=dict(color="#eab308", width=1.8 if span_h >= 720 else 2.2, shape="spline", smoothing=0.8),
             marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#eab308", line=dict(color="#ca8a04", width=1)),
             hovertemplate="<b>Temp (Day):</b> %{y:.1f} °C<extra></extra>"
         ), row=3, col=1)
@@ -724,7 +748,7 @@ if df_all is not None and not df_all.empty:
                 mode="lines+markers",
                 name="Temp (Night: 19-06h)",
                 connectgaps=False,
-                line=dict(color="#1e3a8a", width=1.8 if span_h >= 720 else 2.2),
+                line=dict(color="#1e3a8a", width=1.8 if span_h >= 720 else 2.2, shape="spline", smoothing=0.8),
                 marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#1e3a8a", line=dict(color="#0f172a", width=1)),
                 hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
             ), row=3, col=1)
