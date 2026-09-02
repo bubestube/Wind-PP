@@ -340,27 +340,37 @@ if df_all is not None and not df_all.empty:
         st.warning("No records in selected window.")
         df_slice = df_all.tail(20).copy()
 
-    # Adaptive Resampling
+    # --- 20-Minute / Adaptive Continuous Grid Alignment ---
     span_h = st.session_state.window_span_hours
     if span_h >= 720:
         resample_rule = "2h"
     elif span_h >= 168:
         resample_rule = "30min"
     elif span_h >= 72:
-        resample_rule = "15min"
+        resample_rule = "20min"  # 20-minute interval for 3-day view
     else:
         resample_rule = None
 
     if resample_rule is not None and not df_slice.empty:
+        # Resample onto regular interval bins
         df_agg = df_slice.set_index("timestamp").resample(resample_rule).agg({
             "velocita_knots": "mean",
             "raffica_knots": "max",
             "direzione_deg": "mean",
             "temperatura_c": "mean"
         })
-        # Continuous interpolation: fills any missing recording hours seamlessly
-        df_slice = df_agg.interpolate(method="time").bfill().ffill().reset_index()
-        df_slice["direzione_cardinal"] = df_slice["direzione_deg"].apply(deg_to_cardinal)
+        
+        # Build an exact, unbroken date range spanning the current window
+        grid_index = pd.date_range(
+            start=max(v_start, df_slice["timestamp"].min()).floor(resample_rule),
+            end=min(v_end, df_slice["timestamp"].max()).ceil(resample_rule),
+            freq=resample_rule
+        )
+        # Reindex onto the uniform grid and interpolate linearly over time
+        df_continuous = df_agg.reindex(grid_index).interpolate(method="time").bfill().ffill().reset_index()
+        df_continuous.rename(columns={"index": "timestamp"}, inplace=True)
+        df_continuous["direzione_cardinal"] = df_continuous["direzione_deg"].apply(deg_to_cardinal)
+        df_slice = df_continuous
 
     df_slice["velocita_bft"] = knots_to_bft(df_slice["velocita_knots"])
     df_slice["raffica_bft"] = knots_to_bft(df_slice["raffica_knots"])
@@ -657,24 +667,6 @@ if df_all is not None and not df_all.empty:
             fixedrange=True,
             row=3, col=1
         )
-
-    # Night Shading: ONLY enabled for 6h, 12h, and 24h views to eliminate striped vertical columns
-    if not daytime_only and span_h <= 24 and not df_plot_lines.empty:
-        t_slice_min = df_plot_lines["timestamp"].min()
-        t_slice_max = df_plot_lines["timestamp"].max()
-        curr_day = t_slice_min.floor("D")
-        while curr_day <= t_slice_max:
-            night_start = curr_day + pd.Timedelta(hours=19)
-            night_end = curr_day + pd.Timedelta(days=1, hours=6)
-            if night_end >= t_slice_min and night_start <= t_slice_max:
-                fig.add_vrect(
-                    x0=max(night_start, t_slice_min),
-                    x1=min(night_end, t_slice_max),
-                    fillcolor="rgba(15, 23, 42, 0.04)",
-                    layer="below",
-                    line_width=0
-                )
-            curr_day += pd.Timedelta(days=1)
 
     # Axis Calibrations
     bft_ticks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
