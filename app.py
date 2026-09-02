@@ -97,7 +97,8 @@ st.markdown("""
         font-weight: 700;
         font-family: monospace;
     }
-    /* Force Solid White Fill for all Streamlit Buttons across Light & Dark modes */
+
+    /* 1. Force Solid White Buttons */
     div.stButton > button,
     div.stButton > button:hover,
     div.stButton > button:focus,
@@ -120,6 +121,53 @@ st.markdown("""
     div.stButton > button p,
     div.stButton > button span {
         color: inherit !important;
+    }
+
+    /* 2. Force Solid White Window Width Selectbox & Popover */
+    div[data-baseweb="select"] > div,
+    div[data-baseweb="select"] > div:hover,
+    div[data-baseweb="select"] > div:focus {
+        background-color: #ffffff !important;
+        background: #ffffff !important;
+        color: #0f172a !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 6px !important;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+    }
+    div[data-baseweb="select"] * {
+        color: #0f172a !important;
+    }
+    div[data-baseweb="popover"],
+    ul[data-baseweb="menu"] {
+        background-color: #ffffff !important;
+        background: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 6px !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+    }
+    li[data-baseweb="menu-item"] {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+    }
+    li[data-baseweb="menu-item"]:hover {
+        background-color: #f1f5f9 !important;
+        color: #0284c7 !important;
+    }
+
+    /* 3. Force Solid White Fill for Daytime Only Checkbox */
+    div[data-testid="stCheckbox"] label span[role="checkbox"] {
+        background-color: #ffffff !important;
+        background: #ffffff !important;
+        border: 1.5px solid #cbd5e1 !important;
+        border-radius: 4px !important;
+    }
+    div[data-testid="stCheckbox"] label span[role="checkbox"][aria-checked="true"] {
+        background-color: #0284c7 !important;
+        border-color: #0284c7 !important;
+    }
+    div[data-testid="stCheckbox"] label p {
+        color: #0f172a !important;
+        font-weight: 500 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -223,6 +271,7 @@ if df_all is not None and not df_all.empty:
             format_func=lambda h: f"{h} Hours" if h < 24 else f"{h//24} Day{'s' if h > 24 else ''}"
         )
     with ctrl_col4:
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         daytime_only = st.checkbox("☀️ Daytime Only (06-19h)", value=False)
     with ctrl_col5:
         if st.button("+6 Hours ▶"):
