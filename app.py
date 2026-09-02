@@ -98,7 +98,7 @@ st.markdown("""
         font-family: monospace;
     }
 
-    /* 1. All Navigation & Action Buttons -> Solid White Fill */
+    /* 1. Force Solid White Buttons */
     div.stButton > button,
     div.stButton > button:hover,
     div.stButton > button:focus,
@@ -123,28 +123,36 @@ st.markdown("""
         color: inherit !important;
     }
 
-    /* 2. Window Width Dropdown -> Light Grey Fill */
-    div[data-testid="stSelectbox"] label p {
+    /* 2. White Frame Card for Window Width */
+    .ctrl-frame {
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 8px !important;
+        padding: 4px 10px 8px 10px !important;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+    }
+    .ctrl-frame label p {
         color: #475569 !important;
         font-weight: 600 !important;
+        font-size: 0.85rem !important;
+        margin-bottom: 2px !important;
     }
-    div[data-testid="stSelectbox"] div[data-baseweb="select"],
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
-    div[data-testid="stSelectbox"] div[role="combobox"] {
+    .ctrl-frame div[data-baseweb="select"] > div {
         background-color: #f1f5f9 !important;
         background: #f1f5f9 !important;
-        color: #0f172a !important;
-        border-color: #cbd5e1 !important;
+        border: 1px solid #cbd5e1 !important;
         border-radius: 6px !important;
     }
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] * {
+    .ctrl-frame div[data-baseweb="select"] * {
         color: #0f172a !important;
         fill: #0f172a !important;
     }
-    /* Popover Menu Options for Selectbox */
+
+    /* Dropdown Options Popup */
+    div[data-baseweb="popover"],
     div[data-baseweb="popover"] ul,
     div[data-baseweb="popover"] li {
-        background-color: #f1f5f9 !important;
+        background-color: #f8fafc !important;
         color: #0f172a !important;
     }
     div[data-baseweb="popover"] li:hover,
@@ -153,25 +161,28 @@ st.markdown("""
         color: #0284c7 !important;
     }
 
-    /* 3. Daytime Only Control -> Solid White Fill */
-    div[data-testid="stCheckbox"] {
+    /* 3. White Frame Card for Daytime Only */
+    .daytime-frame {
         background-color: #ffffff !important;
         border: 1px solid #cbd5e1 !important;
-        border-radius: 6px !important;
-        padding: 5px 10px !important;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.04) !important;
-        margin-top: 25px !important;
+        border-radius: 8px !important;
+        padding: 10px 12px !important;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+        margin-top: 14px !important;
     }
-    div[data-testid="stCheckbox"] label span[role="checkbox"] {
+    .daytime-frame label {
+        margin: 0 !important;
+    }
+    .daytime-frame label span[role="checkbox"] {
         background-color: #ffffff !important;
         border: 1.5px solid #94a3b8 !important;
         border-radius: 4px !important;
     }
-    div[data-testid="stCheckbox"] label span[role="checkbox"][aria-checked="true"] {
+    .daytime-frame label span[role="checkbox"][aria-checked="true"] {
         background-color: #0284c7 !important;
         border-color: #0284c7 !important;
     }
-    div[data-testid="stCheckbox"] label p {
+    .daytime-frame label p {
         color: #0f172a !important;
         font-weight: 600 !important;
         margin: 0 !important;
@@ -255,7 +266,7 @@ if df_all is not None and not df_all.empty:
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 6
 
-    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns([1, 1, 1.3, 1.2, 1, 1])
+    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns([1, 1, 1.4, 1.3, 1, 1])
     with ctrl_col1:
         if st.button("◀ -1 Day"):
             st.session_state.window_end_time = max(
@@ -271,14 +282,20 @@ if df_all is not None and not df_all.empty:
             )
             st.rerun()
     with ctrl_col3:
+        # Enclose in white card frame
+        st.markdown('<div class="ctrl-frame">', unsafe_allow_html=True)
         st.session_state.window_span_hours = st.selectbox(
             "Window Width:",
             options=[6, 12, 24, 72, 168],
             index=0,
             format_func=lambda h: f"{h} Hours" if h < 24 else f"{h//24} Day{'s' if h > 24 else ''}"
         )
+        st.markdown('</div>', unsafe_allow_html=True)
     with ctrl_col4:
+        # Enclose in white card frame
+        st.markdown('<div class="daytime-frame">', unsafe_allow_html=True)
         daytime_only = st.checkbox("☀️ Daytime Only (06-19h)", value=False)
+        st.markdown('</div>', unsafe_allow_html=True)
     with ctrl_col5:
         if st.button("+6 Hours ▶"):
             st.session_state.window_end_time = min(
