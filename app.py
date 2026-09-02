@@ -297,7 +297,7 @@ if df_all is not None and not df_all.empty:
     with ctrl_col3:
         st.session_state.window_span_hours = st.selectbox(
             "Window Width:",
-            options=[6, 12, 24, 72, 168],
+            options=[6, 12, 24, 72, 168, 720],
             index=0,
             format_func=lambda h: f"{h} Hours" if h < 24 else f"{h//24} Day{'s' if h > 24 else ''}"
         )
@@ -358,15 +358,18 @@ if df_all is not None and not df_all.empty:
         st.warning("No records in selected window.")
         df_slice = df_all.tail(20).copy()
 
-    # --- Adaptive Density Reduction for Long Intervals (>= 3 Days) ---
+    # --- Adaptive Density Reduction for Long Intervals (3 Days, 7 Days, 30 Days) ---
     span_h = st.session_state.window_span_hours
-    if span_h >= 168:
+    if span_h >= 720:          # 30 Days: 2-hour buckets
+        resample_rule = "2h"
+        bar_width_ms = 2 * 60 * 60 * 1000
+    elif span_h >= 168:        # 7 Days: 30-minute buckets
         resample_rule = "30min"
         bar_width_ms = 30 * 60 * 1000
-    elif span_h >= 72:
+    elif span_h >= 72:         # 3 Days: 15-minute buckets
         resample_rule = "15min"
         bar_width_ms = 15 * 60 * 1000
-    else:
+    else:                      # <= 1 Day: Raw native resolution
         resample_rule = None
         bar_width_ms = 2 * 60 * 1000
 
@@ -392,7 +395,13 @@ if df_all is not None and not df_all.empty:
     # Gap Disconnectors
     df_plot = df_slice.sort_values("timestamp").reset_index(drop=True)
     time_diffs = df_plot["timestamp"].diff()
-    gap_threshold = pd.Timedelta(hours=2) if span_h >= 72 else pd.Timedelta(minutes=45)
+    if span_h >= 720:
+        gap_threshold = pd.Timedelta(hours=8)
+    elif span_h >= 72:
+        gap_threshold = pd.Timedelta(hours=2)
+    else:
+        gap_threshold = pd.Timedelta(minutes=45)
+
     gap_indices = df_plot[time_diffs > gap_threshold].index
 
     if len(gap_indices) > 0:
@@ -415,7 +424,7 @@ if df_all is not None and not df_all.empty:
     else:
         df_plot_lines = df_plot.copy()
 
-    # Adaptive Text Labels & Mini-Arrow Anchors
+    # Adaptive Text Labels & Vector Arrow Anchors
     speed_labels = [""] * len(df_plot_lines)
     gust_labels = [""] * len(df_plot_lines)
     labeled_speed_points = []
@@ -445,10 +454,23 @@ if df_all is not None and not df_all.empty:
         y_arr = df_plot_lines["velocita_plot_y"].to_numpy()
         t_arr = df_plot_lines["timestamp"].to_numpy()
 
-        # Step limits scale dynamically with duration to eliminate visual clutter
-        min_pts_step = 6 if span_h >= 168 else (4 if span_h >= 72 else 2)
-        max_pts_step = 20 if span_h >= 168 else (14 if span_h >= 72 else 8)
-        delta_threshold = 2.5 if span_h >= 72 else 1.0
+        # Step limits scale dynamically with duration to prevent overlap
+        if span_h >= 720:
+            min_pts_step = 10
+            max_pts_step = 30
+            delta_threshold = 4.0
+        elif span_h >= 168:
+            min_pts_step = 6
+            max_pts_step = 20
+            delta_threshold = 2.5
+        elif span_h >= 72:
+            min_pts_step = 4
+            max_pts_step = 14
+            delta_threshold = 2.0
+        else:
+            min_pts_step = 2
+            max_pts_step = 8
+            delta_threshold = 1.0
 
         for idx in valid_indices[1:]:
             curr_v = v_arr[idx]
@@ -551,13 +573,13 @@ if df_all is not None and not df_all.empty:
         y=df_plot_lines["raffica_plot_y"],
         text=df_plot_lines["gust_label"],
         textposition="top center",
-        textfont=dict(family="Arial, sans-serif", size=10.0, color="#b91c1c"),
+        textfont=dict(family="Arial, sans-serif", size=9.5 if span_h >= 720 else 10.0, color="#b91c1c"),
         customdata=np.stack((df_plot_lines["raffica_bft"], df_plot_lines["raffica_knots"]), axis=-1),
         mode="lines+markers+text",
         name="Gust (Raffica)",
         connectgaps=False,
-        line=dict(color="#0f172a", width=1.6, dash="dot"),
-        marker=dict(symbol="circle", size=3.5 if span_h >= 72 else 4.0, color="#0f172a"),
+        line=dict(color="#0f172a", width=1.4 if span_h >= 720 else 1.6, dash="dot"),
+        marker=dict(symbol="circle", size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
         hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=1, col=1)
 
@@ -567,13 +589,13 @@ if df_all is not None and not df_all.empty:
         y=df_plot_lines["velocita_plot_y"],
         text=df_plot_lines["speed_label"],
         textposition="bottom center",
-        textfont=dict(family="Arial, sans-serif", size=10.0, color="#0f172a"),
+        textfont=dict(family="Arial, sans-serif", size=9.5 if span_h >= 720 else 10.0, color="#0f172a"),
         customdata=np.stack((df_plot_lines["velocita_bft"], df_plot_lines["velocita_knots"], df_plot_lines["direzione_deg"]), axis=-1),
         mode="lines+markers+text",
         name="Wind Speed (Avg)",
         connectgaps=False,
-        line=dict(color="#0f172a", width=2.2),
-        marker=dict(size=3.5 if span_h >= 72 else 4.0, color="#0f172a"),
+        line=dict(color="#0f172a", width=1.8 if span_h >= 720 else 2.2),
+        marker=dict(size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
@@ -613,16 +635,17 @@ if df_all is not None and not df_all.empty:
         mode="markers",
         name="Direction",
         connectgaps=False,
-        marker=dict(symbol="circle", size=3.0 if span_h >= 72 else 3.5, color="#64748b"),
+        marker=dict(symbol="circle", size=2.5 if span_h >= 720 else (3.0 if span_h >= 72 else 3.5), color="#64748b"),
         customdata=df_plot_lines[["direzione_cardinal", "velocita_knots", "velocita_bft"]],
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=2, col=1)
 
-    # Subplot 2: Direction Arrows Throttled to Match Extended Horizon
+    # Subplot 2: Direction Arrows Throttled to Match Horizon
     df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
-    steady_step = max(3, len(df_for_arrows) // (18 if span_h >= 72 else 25))
+    target_arrow_count = 14 if span_h >= 720 else (18 if span_h >= 72 else 25)
+    steady_step = max(3, len(df_for_arrows) // target_arrow_count)
     selected_indices = []
     if not df_for_arrows.empty:
         selected_indices.append(0)
@@ -636,7 +659,7 @@ if df_all is not None and not df_all.empty:
             delta_deg = abs((curr_deg - last_deg + 180) % 360 - 180)
             points_since_last = i - last_idx
 
-            angle_sens = 35.0 if span_h >= 72 else 20.0
+            angle_sens = 45.0 if span_h >= 720 else (35.0 if span_h >= 72 else 20.0)
             if delta_deg > angle_sens or points_since_last >= steady_step:
                 selected_indices.append(i)
                 last_idx = i
@@ -687,8 +710,8 @@ if df_all is not None and not df_all.empty:
             mode="lines+markers",
             name="Temp (Day: 06-19h)",
             connectgaps=False,
-            line=dict(color="#eab308", width=2.2),
-            marker=dict(size=3.5 if span_h >= 72 else 4, color="#eab308", line=dict(color="#ca8a04", width=1)),
+            line=dict(color="#eab308", width=1.8 if span_h >= 720 else 2.2),
+            marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#eab308", line=dict(color="#ca8a04", width=1)),
             hovertemplate="<b>Temp (Day):</b> %{y:.1f} °C<extra></extra>"
         ), row=3, col=1)
 
@@ -699,8 +722,8 @@ if df_all is not None and not df_all.empty:
                 mode="lines+markers",
                 name="Temp (Night: 19-06h)",
                 connectgaps=False,
-                line=dict(color="#1e3a8a", width=2.2),
-                marker=dict(size=3.5 if span_h >= 72 else 4, color="#1e3a8a", line=dict(color="#0f172a", width=1)),
+                line=dict(color="#1e3a8a", width=1.8 if span_h >= 720 else 2.2),
+                marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#1e3a8a", line=dict(color="#0f172a", width=1)),
                 hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
             ), row=3, col=1)
 
