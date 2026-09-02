@@ -634,7 +634,17 @@ if df_all is not None and not df_all.empty:
                 hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
             ), row=3, col=1)
 
-        fig.update_yaxes(title_text="°C", row=3, col=1, gridcolor="#e2e8f0", fixedrange=True)
+        fig.update_yaxes(
+            title_text="<b>°C</b>",
+            title_font=dict(color="#0f172a", size=12),
+            tickfont=dict(color="#0f172a", size=11),
+            showline=True,
+            linecolor="#94a3b8",
+            linewidth=1.5,
+            gridcolor="#cbd5e1",
+            fixedrange=True,
+            row=3, col=1
+        )
 
     # Night Shading across Active Slice Window
     if not daytime_only and not df_plot_lines.empty:
@@ -665,31 +675,48 @@ if df_all is not None and not df_all.empty:
     max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
     top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
 
+    # Subplot 1 Y-Axis: Beaufort Force (High-contrast slate text & distinct axis boundary)
     fig.update_yaxes(
         title_text="<b>Beaufort Force (Stretched)</b>",
+        title_font=dict(color="#0f172a", size=12),
         range=[0, top_y_limit],
         tickvals=bft_stretched_vals,
         ticktext=bft_labels,
-        row=1, col=1,
-        gridcolor="#e2e8f0",
-        zerolinecolor="#cbd5e1",
-        fixedrange=True
+        tickfont=dict(color="#0f172a", size=11),
+        showline=True,
+        linecolor="#94a3b8",
+        linewidth=1.5,
+        gridcolor="#cbd5e1",
+        zerolinecolor="#94a3b8",
+        zerolinewidth=1.5,
+        fixedrange=True,
+        row=1, col=1
     )
 
+    # Subplot 2 Y-Axis: Direction (High-contrast slate text & boundary)
     fig.update_yaxes(
-        title_text="Direction",
+        title_text="<b>Direction</b>",
+        title_font=dict(color="#0f172a", size=12),
         range=[-35, 395],
         tickvals=[0, 90, 180, 270, 360],
         ticktext=["N (0°)", "E (90°)", "S (180°)", "W (270°)", "N (360°)"],
-        row=2, col=1,
-        gridcolor="#e2e8f0",
-        fixedrange=True
+        tickfont=dict(color="#0f172a", size=11),
+        showline=True,
+        linecolor="#94a3b8",
+        linewidth=1.5,
+        gridcolor="#cbd5e1",
+        fixedrange=True,
+        row=2, col=1
     )
 
     fig.update_xaxes(
-        gridcolor="#e2e8f0",
+        gridcolor="#cbd5e1",
         showgrid=True,
-        range=[v_start, v_end]
+        range=[v_start, v_end],
+        tickfont=dict(color="#0f172a", size=11),
+        showline=True,
+        linecolor="#94a3b8",
+        linewidth=1.5
     )
 
     fig.update_layout(
