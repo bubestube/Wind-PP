@@ -270,11 +270,17 @@ if df_all is not None and not df_all.empty:
             key="span_selector",
             format_func=lambda h: f"{h} Hours" if h < 24 else f"{h//24} Day{'s' if h > 24 else ''}"
         )
-        st.session_state.window_span_hours = selected_span
+        # Snap time boundary to match the interval if span changed
+        if selected_span != st.session_state.window_span_hours:
+            st.session_state.window_span_hours = selected_span
+            if selected_span == 72:
+                # Snap to clean 20-minute mark
+                curr_t = pd.to_datetime(st.session_state.window_end_time)
+                st.session_state.window_end_time = curr_t.floor("20min").to_pydatetime()
 
     span_h = st.session_state.window_span_hours
 
-    # Enforce exact bucket resolution and slider increments
+    # Enforce exact bucket resolution and matching slider step
     if span_h == 72:           # 3 Days -> STRICT 20 MIN BUCKET
         resample_rule = "20min"
         slider_step_delta = datetime.timedelta(minutes=20)
@@ -331,11 +337,11 @@ if df_all is not None and not df_all.empty:
         active_month_str = f"{cur_start_preview.strftime('%B %Y')} – {cur_end_preview.strftime('%B %Y')}"
 
     st.markdown(
-        f'<div class="slider-month-pill">📅 <span>{active_month_str}</span> (Interval: {resample_rule if resample_rule else "Native ~3m"})</div>',
+        f'<div class="slider-month-pill">📅 <span>{active_month_str}</span> (Step & Bucket: {resample_rule if resample_rule else "Native ~3m"})</div>',
         unsafe_allow_html=True
     )
 
-    # Timeline Slider with matched 20-min step
+    # Timeline Slider with DYNAMIC 20-minute step for 3 days
     min_slider = min_allowable_end
     max_slider = t_global_max.to_pydatetime()
 
@@ -346,14 +352,14 @@ if df_all is not None and not df_all.empty:
             max_value=max_slider,
             value=min(max_slider, max(min_slider, st.session_state.window_end_time)),
             format="DD.MM HH:mm",
-            step=slider_step_delta
+            step=slider_step_delta   # <--- DYNAMICALLY 20 MINUTES FOR 3 DAYS!
         )
         st.session_state.window_end_time = selected_end
 
     v_end = pd.to_datetime(st.session_state.window_end_time)
     v_start = v_end - pd.Timedelta(hours=span_h)
 
-    # 4. SLICE & STRICT BUCKETING
+    # 4. SLICE & STRICT 20-MIN BUCKETING
     df_slice = df_all[(df_all["timestamp"] >= v_start) & (df_all["timestamp"] <= v_end)].copy()
 
     if daytime_only:
@@ -368,7 +374,7 @@ if df_all is not None and not df_all.empty:
         df_slice["timestamp"] = df_slice["timestamp"].dt.round("1min")
         df_slice = df_slice.drop_duplicates(subset=["timestamp"]).sort_values("timestamp")
 
-        # Explicit Resampling onto 20-minute (:00, :20, :40) bins
+        # Explicit Resampling onto regular 20-minute (:00, :20, :40) bins
         df_binned = df_slice.set_index("timestamp").resample(resample_rule).agg({
             "velocita_knots": "mean",
             "raffica_knots": "max",
