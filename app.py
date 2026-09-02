@@ -176,6 +176,22 @@ st.markdown("""
         font-weight: 600 !important;
         margin: 0 !important;
     }
+
+    /* 4. Month Reading Pill above Slider */
+    .slider-month-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background-color: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 20px;
+        padding: 4px 12px;
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: #0f172a;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+        margin-bottom: 2px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -290,6 +306,22 @@ if df_all is not None and not df_all.empty:
         if st.button("🔴 Live Latest"):
             st.session_state.window_end_time = t_global_max.to_pydatetime()
             st.rerun()
+
+    # Calculate active month reading for current window position
+    cur_end_preview = pd.to_datetime(st.session_state.window_end_time)
+    cur_start_preview = cur_end_preview - pd.Timedelta(hours=st.session_state.window_span_hours)
+    if cur_start_preview.strftime("%B %Y") == cur_end_preview.strftime("%B %Y"):
+        active_month_str = cur_end_preview.strftime("%B %Y")
+    elif cur_start_preview.year == cur_end_preview.year:
+        active_month_str = f"{cur_start_preview.strftime('%B')} – {cur_end_preview.strftime('%B %Y')}"
+    else:
+        active_month_str = f"{cur_start_preview.strftime('%B %Y')} – {cur_end_preview.strftime('%B %Y')}"
+
+    # Month Reading Display directly above the slider
+    st.markdown(
+        f'<div class="slider-month-pill">📅 <span>{active_month_str}</span></div>',
+        unsafe_allow_html=True
+    )
 
     # High-precision Timeline Slider for Continuous Scrolling
     min_slider = (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime()
@@ -549,7 +581,7 @@ if df_all is not None and not df_all.empty:
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=2, col=1)
 
-    # Subplot 2: Rotating Vector Arrows on Active Slice (Shorter stem)
+    # Subplot 2: Rotating Vector Arrows on Active Slice (36px stem)
     df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
@@ -573,7 +605,7 @@ if df_all is not None and not df_all.empty:
                 last_deg = curr_deg
 
     df_sub = df_for_arrows.iloc[selected_indices]
-    arrow_length_px = 36  # Shortened from 60px
+    arrow_length_px = 36
 
     for _, row_data in df_sub.iterrows():
         angle_deg = row_data["arrow_angle"]
