@@ -251,7 +251,7 @@ if df_all is not None and not df_all.empty:
 
     st.write("")
 
-    # 3. Dynamic Timeline Navigation & Window Scrubber
+    # 3. Controls & Timeline Window
     if "window_end_time" not in st.session_state:
         st.session_state.window_end_time = t_global_max.to_pydatetime()
     if "window_span_hours" not in st.session_state:
@@ -330,7 +330,7 @@ if df_all is not None and not df_all.empty:
     v_end = pd.to_datetime(st.session_state.window_end_time)
     v_start = v_end - pd.Timedelta(hours=st.session_state.window_span_hours)
 
-    # 4. SLICE ONLY THE REQUESTED TIME WINDOW ON DEMAND
+    # 4. SLICE & RESAMPLE
     df_slice = df_all[(df_all["timestamp"] >= v_start) & (df_all["timestamp"] <= v_end)].copy()
 
     if daytime_only:
@@ -340,19 +340,23 @@ if df_all is not None and not df_all.empty:
         st.warning("No records in selected window.")
         df_slice = df_all.tail(20).copy()
 
-    # --- 20-Minute / Adaptive Continuous Grid Alignment ---
+    # Determine frequency: 3 days = strict 20 min interval
     span_h = st.session_state.window_span_hours
     if span_h >= 720:
         resample_rule = "2h"
     elif span_h >= 168:
         resample_rule = "30min"
     elif span_h >= 72:
-        resample_rule = "20min"  # 20-minute interval for 3-day view
+        resample_rule = "20min"   # Exact 20-minute intervals for 3-day view
     else:
         resample_rule = None
 
     if resample_rule is not None and not df_slice.empty:
-        # Resample onto regular interval bins
+        # 1. Round timestamps to clean minute boundary to avoid sub-second bin splitting
+        df_slice["timestamp"] = df_slice["timestamp"].dt.round("1min")
+        df_slice = df_slice.drop_duplicates(subset=["timestamp"]).sort_values("timestamp")
+        
+        # 2. Resample on strict interval
         df_agg = df_slice.set_index("timestamp").resample(resample_rule).agg({
             "velocita_knots": "mean",
             "raffica_knots": "max",
@@ -360,17 +364,16 @@ if df_all is not None and not df_all.empty:
             "temperatura_c": "mean"
         })
         
-        # Build an exact, unbroken date range spanning the current window
-        grid_index = pd.date_range(
-            start=max(v_start, df_slice["timestamp"].min()).floor(resample_rule),
-            end=min(v_end, df_slice["timestamp"].max()).ceil(resample_rule),
-            freq=resample_rule
-        )
-        # Reindex onto the uniform grid and interpolate linearly over time
-        df_continuous = df_agg.reindex(grid_index).interpolate(method="time").bfill().ffill().reset_index()
-        df_continuous.rename(columns={"index": "timestamp"}, inplace=True)
-        df_continuous["direzione_cardinal"] = df_continuous["direzione_deg"].apply(deg_to_cardinal)
-        df_slice = df_continuous
+        # 3. Create uninterrupted, edge-to-edge date grid spanning from first to last point
+        grid_start = df_slice["timestamp"].min().floor(resample_rule)
+        grid_end = df_slice["timestamp"].max().ceil(resample_rule)
+        uniform_index = pd.date_range(start=grid_start, end=grid_end, freq=resample_rule)
+        
+        # 4. Reindex & interpolate linearly so NO slot is ever empty
+        df_grid = df_agg.reindex(uniform_index).interpolate(method="time").bfill().ffill().reset_index()
+        df_grid.rename(columns={"index": "timestamp"}, inplace=True)
+        df_grid["direzione_cardinal"] = df_grid["direzione_deg"].apply(deg_to_cardinal)
+        df_slice = df_grid
 
     df_slice["velocita_bft"] = knots_to_bft(df_slice["velocita_knots"])
     df_slice["raffica_bft"] = knots_to_bft(df_slice["raffica_knots"])
@@ -381,7 +384,7 @@ if df_all is not None and not df_all.empty:
     has_temp = "temperatura_c" in df_slice.columns and df_slice["temperatura_c"].notnull().any()
     df_plot_lines = df_slice.sort_values("timestamp").reset_index(drop=True)
 
-    # Dynamic Labels & Arrow Vectors
+    # Dynamic Labels & Arrow Anchors
     speed_labels = [""] * len(df_plot_lines)
     gust_labels = [""] * len(df_plot_lines)
     labeled_speed_points = []
@@ -471,7 +474,7 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # Completely continuous, gapless area fill polygons (No Bar artifacts, no columns)
+    # 100% Continuous Area Fill
     fig.add_trace(go.Scatter(
         x=df_plot_lines["timestamp"],
         y=df_plot_lines["raffica_plot_y"],
@@ -667,6 +670,24 @@ if df_all is not None and not df_all.empty:
             fixedrange=True,
             row=3, col=1
         )
+
+    # Night Shading: ONLY on 6h, 12h, 24h windows
+    if not daytime_only and span_h <= 24 and not df_plot_lines.empty:
+        t_slice_min = df_plot_lines["timestamp"].min()
+        t_slice_max = df_plot_lines["timestamp"].max()
+        curr_day = t_slice_min.floor("D")
+        while curr_day <= t_slice_max:
+            night_start = curr_day + pd.Timedelta(hours=19)
+            night_end = curr_day + pd.Timedelta(days=1, hours=6)
+            if night_end >= t_slice_min and night_start <= t_slice_max:
+                fig.add_vrect(
+                    x0=max(night_start, t_slice_min),
+                    x1=min(night_end, t_slice_max),
+                    fillcolor="rgba(15, 23, 42, 0.04)",
+                    layer="below",
+                    line_width=0
+                )
+            curr_day += pd.Timedelta(days=1)
 
     # Axis Calibrations
     bft_ticks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
