@@ -97,6 +97,18 @@ st.markdown("""
         font-weight: 700;
         font-family: monospace;
     }
+    /* Mobile Touch & Pinch Zoom Fix for iOS Safari and iPadOS */
+    div[data-testid="stPlotlyChart"] {
+        touch-action: none !important;
+        user-select: none !important;
+        -webkit-user-select: none !important;
+    }
+    div[data-testid="stPlotlyChart"] .js-plotly-plot,
+    div[data-testid="stPlotlyChart"] .plot-container,
+    div[data-testid="stPlotlyChart"] .draglayer,
+    div[data-testid="stPlotlyChart"] .nsewdrag {
+        touch-action: none !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -633,7 +645,7 @@ if df_all is not None and not df_all.empty:
         margin=dict(l=35, r=20, t=50, b=30)
     )
 
-    # 6. Render Chart
+    # 6. Render Chart with Native Mobile Touch & Pinch Zoom Configuration
     st.plotly_chart(
         fig,
         use_container_width=True,
@@ -641,6 +653,9 @@ if df_all is not None and not df_all.empty:
             "scrollZoom": True,
             "displayModeBar": True,
             "displaylogo": False,
+            "doubleClick": "reset",
+            "showTips": False,
+            "watermark": False,
             "modeBarButtonsToRemove": ["lasso2d", "select2d"]
         }
     )
