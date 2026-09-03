@@ -263,7 +263,7 @@ if df_raw is not None and not df_raw.empty:
     month_str = cur_end.strftime("%B %Y") if cur_start.strftime("%B %Y") == cur_end.strftime("%B %Y") else f"{cur_start.strftime('%B')} – {cur_end.strftime('%B %Y')}"
     st.markdown(f'<div class="slider-month-pill">📅 <span>{month_str}</span> (Window: {span_h}h)</div>', unsafe_allow_html=True)
 
-    # Fluid Scrubbing Slider (Triggers immediate on-demand slicing across entire history)
+    # Fluid Scrubbing Slider
     if min_allowable_end < max_allowable_end:
         scrub_pos = st.slider(
             "Continuous Timeline Scrubber:",
@@ -280,7 +280,7 @@ if df_raw is not None and not df_raw.empty:
     v_end = pd.to_datetime(st.session_state.window_end_time)
     v_start = v_end - pd.Timedelta(hours=span_h)
 
-    # 3. ON-DEMAND SLICE WITH BUFFER (Extracts only the required window)
+    # 3. ON-DEMAND SLICE WITH BUFFER
     buffer = pd.Timedelta(hours=2)
     df_slice = df_raw[(df_raw["timestamp"] >= v_start - buffer) & (df_raw["timestamp"] <= v_end + buffer)].copy()
 
@@ -290,7 +290,6 @@ if df_raw is not None and not df_raw.empty:
     if df_slice.empty:
         df_slice = df_raw.tail(40).copy()
 
-    # Resample only the visible chunk
     step_rule = "10min" if span_h >= 72 else "5min"
     df_chart = df_slice.set_index("timestamp").resample(step_rule).agg({
         "velocita_knots": "mean",
@@ -310,7 +309,6 @@ if df_raw is not None and not df_raw.empty:
     max_observed_y = df_chart["raffica_plot_y"].dropna().max() if not df_chart["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
     top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.15)
 
-    # Calculate labels & vector arrows on-demand for this slice
     speed_labels = [""] * len(df_chart)
     gust_labels = [""] * len(df_chart)
     labeled_speed_points = []
@@ -382,7 +380,7 @@ if df_raw is not None and not df_raw.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # Continuous Gradient Surface (Only for current window bounds)
+    # Continuous Gradient Surface
     y_levels = np.linspace(0, top_y_limit, 45)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
     z_gradient = np.tile(bft_levels, (2, 1)).T
@@ -558,7 +556,7 @@ if df_raw is not None and not df_raw.empty:
         range=[0, top_y_limit],
         tickvals=bft_stretched_vals,
         ticktext=bft_labels,
-        fixedrange=True,
+        fixedrange=True,  # Locks vertical zooming so wheel zooms horizontally
         row=1, col=1
     )
 
@@ -586,16 +584,16 @@ if df_raw is not None and not df_raw.empty:
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
         hovermode="x unified",
+        dragmode="pan",  # Left-click drag pans horizontally
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         margin=dict(l=35, r=20, t=50, b=30)
     )
 
-    # Render with fast client-side state
     st.plotly_chart(
         fig,
         use_container_width=True,
         config={
-            "scrollZoom": False,
+            "scrollZoom": True,  # Mouse wheel and trackpad zooming active
             "displayModeBar": True,
             "modeBarButtonsToRemove": ["lasso2d", "select2d"]
         }
