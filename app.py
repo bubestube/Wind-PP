@@ -99,6 +99,7 @@ st.markdown("""
         background-color: #ffffff !important;
         color: #0f172a !important;
         border: 1px solid #cbd5e1 !important;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
         border-radius: 6px !important;
         font-weight: 600 !important;
     }
@@ -107,26 +108,40 @@ st.markdown("""
         border-color: #94a3b8 !important;
         color: #0284c7 !important;
     }
-    .scroll-hint {
-        background-color: #f1f5f9;
-        border: 1px solid #cbd5e1;
-        border-radius: 6px;
-        padding: 6px 14px;
-        font-size: 0.85rem;
-        color: #475569;
+    div.stButton > button p, div.stButton > button span {
+        color: inherit !important;
+    }
+    div[data-testid="stSelectbox"] label p {
+        color: #475569 !important;
+        font-weight: 600 !important;
+    }
+    div[data-testid="stSelectbox"] div[role="combobox"] {
+        background-color: #f1f5f9 !important;
+        color: #0f172a !important;
+        border-color: #cbd5e1 !important;
+        border-radius: 6px !important;
+    }
+    .slider-month-pill {
         display: inline-flex;
         align-items: center;
-        gap: 8px;
-        margin-bottom: 8px;
+        gap: 6px;
+        background-color: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 20px;
+        padding: 4px 12px;
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: #0f172a;
+        margin-bottom: 4px;
     }
     </style>
 """, unsafe_allow_html=True)
 
 st.title("🪁 Porto Pollo (Sardinia) – Live Wind Station")
 
-# 1. Fast Cache for Raw File Reading Only
+# 1. Fast Cached CSV Loader
 @st.cache_data(ttl=60, show_spinner=False)
-def load_raw_dataset(csv_path):
+def load_all_records(csv_path):
     if not os.path.exists(csv_path):
         return None
     try:
@@ -140,7 +155,7 @@ def load_raw_dataset(csv_path):
     except Exception:
         return None
 
-df_raw = load_raw_dataset(CSV_FILE)
+df_raw = load_all_records(CSV_FILE)
 
 if df_raw is not None and not df_raw.empty:
     latest = df_raw.iloc[-1]
@@ -148,7 +163,7 @@ if df_raw is not None and not df_raw.empty:
     t_global_max = df_raw["timestamp"].max()
     t_global_min = df_raw["timestamp"].min()
 
-    # Top KPI Cards
+    # Top KPI Badges
     speed_bg, speed_fg = get_wg_badge(latest['velocita_knots'])
     gust_bg, gust_fg = get_wg_badge(latest['raffica_knots'])
     temp_val = latest.get("temperatura_c")
@@ -192,76 +207,91 @@ if df_raw is not None and not df_raw.empty:
 
     st.write("")
 
-    # 2. Viewport Window State (On-Demand Sliding Window)
-    if "view_end" not in st.session_state:
-        st.session_state.view_end = t_global_max.to_pydatetime()
-    if "view_span_hours" not in st.session_state:
-        st.session_state.view_span_hours = 24  # Default: 24h viewport for speed
+    # 2. Viewport Window State
+    if "window_end_time" not in st.session_state:
+        st.session_state.window_end_time = t_global_max.to_pydatetime()
+    if "window_span_hours" not in st.session_state:
+        st.session_state.window_span_hours = 24
 
-    # Paging Controls
-    nav_col1, nav_col2, nav_col3, nav_col4, nav_col5 = st.columns([1, 1, 1.5, 1, 1])
-    span_h = st.session_state.view_span_hours
+    span_h = st.session_state.window_span_hours
+    min_allowable_end = (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime()
+    max_allowable_end = t_global_max.to_pydatetime()
 
-    with nav_col1:
-        if st.button("◀ Pan -12h"):
-            st.session_state.view_end = max(
-                (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime(),
-                st.session_state.view_end - datetime.timedelta(hours=12)
+    # Continuous Navigation Toolbar
+    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns([1, 1, 1.3, 1.2, 1, 1])
+    with ctrl_col1:
+        if st.button("◀ -1 Day"):
+            st.session_state.window_end_time = max(
+                min_allowable_end,
+                st.session_state.window_end_time - datetime.timedelta(days=1)
             )
             st.rerun()
-    with nav_col2:
-        if st.button("◀ Pan -6h"):
-            st.session_state.view_end = max(
-                (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime(),
-                st.session_state.view_end - datetime.timedelta(hours=6)
+    with ctrl_col2:
+        if st.button("◀ -6 Hours"):
+            st.session_state.window_end_time = max(
+                min_allowable_end,
+                st.session_state.window_end_time - datetime.timedelta(hours=6)
             )
             st.rerun()
-    with nav_col3:
-        st.session_state.view_span_hours = st.selectbox(
-            "Visible Span:",
-            options=[12, 24, 48, 72],
-            index=1,
-            format_func=lambda h: f"{h} Hours" if h < 24 else f"{h//24} Days"
+    with ctrl_col3:
+        new_span = st.selectbox(
+            "Visible Window Width:",
+            options=[12, 24, 48, 72, 168],
+            index=[12, 24, 48, 72, 168].index(span_h) if span_h in [12, 24, 48, 72, 168] else 1,
+            format_func=lambda h: f"{h} Hours" if h < 24 else f"{h//24} Day{'s' if h > 24 else ''}"
         )
-    with nav_col4:
-        if st.button("Pan +6h ▶"):
-            st.session_state.view_end = min(
-                t_global_max.to_pydatetime(),
-                st.session_state.view_end + datetime.timedelta(hours=6)
+        if new_span != st.session_state.window_span_hours:
+            st.session_state.window_span_hours = new_span
+            st.rerun()
+    with ctrl_col4:
+        daytime_only = st.checkbox("☀️ Daytime Only (06-19h)", value=False)
+    with ctrl_col5:
+        if st.button("+6 Hours ▶"):
+            st.session_state.window_end_time = min(
+                max_allowable_end,
+                st.session_state.window_end_time + datetime.timedelta(hours=6)
             )
             st.rerun()
-    with nav_col5:
+    with ctrl_col6:
         if st.button("🔴 Live Latest"):
-            st.session_state.view_end = t_global_max.to_pydatetime()
+            st.session_state.window_end_time = max_allowable_end
             st.rerun()
 
-    # Timeline scrubber across the entire historical range
-    min_end_allowed = (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime()
-    max_end_allowed = t_global_max.to_pydatetime()
+    # Active Month Reading Pill
+    cur_end = pd.to_datetime(st.session_state.window_end_time)
+    cur_start = cur_end - pd.Timedelta(hours=span_h)
+    month_str = cur_end.strftime("%B %Y") if cur_start.strftime("%B %Y") == cur_end.strftime("%B %Y") else f"{cur_start.strftime('%B')} – {cur_end.strftime('%B %Y')}"
+    st.markdown(f'<div class="slider-month-pill">📅 <span>{month_str}</span> (Window: {span_h}h)</div>', unsafe_allow_html=True)
 
-    if min_end_allowed < max_end_allowed:
-        scrub_val = st.slider(
-            "Timeline Scrubber (Loads window on release):",
-            min_value=min_end_allowed,
-            max_value=max_end_allowed,
-            value=min(max_end_allowed, max(min_end_allowed, st.session_state.view_end)),
+    # Fluid Scrubbing Slider (Triggers immediate on-demand slicing across entire history)
+    if min_allowable_end < max_allowable_end:
+        scrub_pos = st.slider(
+            "Continuous Timeline Scrubber:",
+            min_value=min_allowable_end,
+            max_value=max_allowable_end,
+            value=min(max_allowable_end, max(min_allowable_end, st.session_state.window_end_time)),
             format="DD.MM HH:mm",
             step=datetime.timedelta(minutes=30)
         )
-        st.session_state.view_end = scrub_val
+        if scrub_pos != st.session_state.window_end_time:
+            st.session_state.window_end_time = scrub_pos
+            st.rerun()
 
-    v_end = pd.to_datetime(st.session_state.view_end)
+    v_end = pd.to_datetime(st.session_state.window_end_time)
     v_start = v_end - pd.Timedelta(hours=span_h)
 
-    # 3. ON-DEMAND SLICE (Load only active view + small buffer)
-    buffer_margin = pd.Timedelta(hours=2)
-    df_slice = df_raw[(df_raw["timestamp"] >= v_start - buffer_margin) & (df_raw["timestamp"] <= v_end + buffer_margin)].copy()
+    # 3. ON-DEMAND SLICE WITH BUFFER (Extracts only the required window)
+    buffer = pd.Timedelta(hours=2)
+    df_slice = df_raw[(df_raw["timestamp"] >= v_start - buffer) & (df_raw["timestamp"] <= v_end + buffer)].copy()
+
+    if daytime_only:
+        df_slice = df_slice[df_slice["timestamp"].dt.hour.between(6, 18)].copy()
 
     if df_slice.empty:
-        df_slice = df_raw.tail(30).copy()
+        df_slice = df_raw.tail(40).copy()
 
-    # Downsample only the loaded slice (not the whole file)
-    step_rule = "10min" if span_h > 24 else "5min"
+    # Resample only the visible chunk
+    step_rule = "10min" if span_h >= 72 else "5min"
     df_chart = df_slice.set_index("timestamp").resample(step_rule).agg({
         "velocita_knots": "mean",
         "raffica_knots": "max",
@@ -280,7 +310,7 @@ if df_raw is not None and not df_raw.empty:
     max_observed_y = df_chart["raffica_plot_y"].dropna().max() if not df_chart["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
     top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.15)
 
-    # Calculate labels & vector arrows ONLY for visible slice
+    # Calculate labels & vector arrows on-demand for this slice
     speed_labels = [""] * len(df_chart)
     gust_labels = [""] * len(df_chart)
     labeled_speed_points = []
@@ -311,14 +341,11 @@ if df_raw is not None and not df_raw.empty:
         t_arr = df_chart["timestamp"].to_numpy()
 
         min_pts_step = 2 if span_h <= 24 else 4
-        max_pts_step = 6 if span_h <= 24 else 12
+        max_pts_step = 7 if span_h <= 24 else 14
         delta_threshold = 1.2
 
         for idx in valid_indices[1:]:
-            curr_v = v_arr[idx]
-            curr_d = d_arr[idx]
-            curr_g = r_arr[idx]
-
+            curr_v, curr_d, curr_g = v_arr[idx], d_arr[idx], r_arr[idx]
             delta_s = abs(curr_v - last_s_val)
             pts_since_s = idx - last_s_idx
 
@@ -329,20 +356,19 @@ if df_raw is not None and not df_raw.empty:
                     "velocita_plot_y": y_arr[idx],
                     "direzione_deg": curr_d
                 })
-                last_s_val = curr_v
-                last_s_idx = idx
+                last_s_val, last_s_idx = curr_v, idx
 
             if pd.notnull(curr_g):
                 delta_g = abs(curr_g - last_g_val)
                 pts_since_g = idx - last_g_idx
                 if (delta_g >= delta_threshold and pts_since_g >= min_pts_step) or pts_since_g >= max_pts_step:
                     gust_labels[idx] = f"{curr_g:.1f}"
-                    last_g_val = curr_g
-                    last_g_idx = idx
+                    last_g_val, last_g_idx = curr_g, idx
 
     df_chart["speed_label"] = speed_labels
     df_chart["gust_label"] = gust_labels
 
+    # 4. Render Multi-Panel Figure
     fig = make_subplots(
         rows=3 if has_temp else 2,
         cols=1,
@@ -356,7 +382,7 @@ if df_raw is not None and not df_raw.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # 1. 2D Continuous Gradient Surface (Only for active slice)
+    # Continuous Gradient Surface (Only for current window bounds)
     y_levels = np.linspace(0, top_y_limit, 45)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
     z_gradient = np.tile(bft_levels, (2, 1)).T
@@ -372,7 +398,7 @@ if df_raw is not None and not df_raw.empty:
         hoverinfo="skip"
     ), row=1, col=1)
 
-    # 2. Inverted White Ceiling Mask
+    # Inverted White Ceiling Mask
     x_mask = [v_start] + list(df_chart["timestamp"]) + [v_end, v_end, v_start]
     y_mask = [df_chart["raffica_plot_y"].iloc[0]] + list(df_chart["raffica_plot_y"]) + [
         df_chart["raffica_plot_y"].iloc[-1], top_y_limit * 1.10, top_y_limit * 1.10
@@ -388,7 +414,7 @@ if df_raw is not None and not df_raw.empty:
         showlegend=False
     ), row=1, col=1)
 
-    # 3. Gust Trace
+    # Subplot 1: Gust Trace
     fig.add_trace(go.Scatter(
         x=df_chart["timestamp"],
         y=df_chart["raffica_plot_y"],
@@ -403,7 +429,7 @@ if df_raw is not None and not df_raw.empty:
         hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=1, col=1)
 
-    # 4. Sustained Speed Trace
+    # Subplot 1: Speed Trace
     fig.add_trace(go.Scatter(
         x=df_chart["timestamp"],
         y=df_chart["velocita_plot_y"],
@@ -447,13 +473,12 @@ if df_raw is not None and not df_raw.empty:
             opacity=0.95
         )
 
-    # 5. Direction Subplot (Circle Points)
+    # Subplot 2: Direction Scatter
     fig.add_trace(go.Scatter(
         x=df_chart["timestamp"],
         y=df_chart["direzione_deg"],
         mode="markers",
         name="Direction",
-        connectgaps=False,
         marker=dict(symbol="circle", size=3.0, color="#64748b"),
         customdata=df_chart[["direzione_cardinal", "velocita_knots", "velocita_bft"]],
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
@@ -511,7 +536,7 @@ if df_raw is not None and not df_raw.empty:
             opacity=0.9
         )
 
-    # 6. Temperature Trace
+    # Subplot 3: Temperature
     if has_temp:
         fig.add_trace(go.Scatter(
             x=df_chart["timestamp"],
@@ -561,16 +586,16 @@ if df_raw is not None and not df_raw.empty:
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
         hovermode="x unified",
-        dragmode="pan",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         margin=dict(l=35, r=20, t=50, b=30)
     )
 
+    # Render with fast client-side state
     st.plotly_chart(
         fig,
         use_container_width=True,
         config={
-            "scrollZoom": True,
+            "scrollZoom": False,
             "displayModeBar": True,
             "modeBarButtonsToRemove": ["lasso2d", "select2d"]
         }
