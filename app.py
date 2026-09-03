@@ -339,6 +339,7 @@ if df_all is not None and not df_all.empty:
 
     max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
     top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
+    ceiling_y = top_y_limit * 1.25
 
     # Dynamic Labels & Arrow Vectors
     speed_labels = [""] * len(df_plot_lines)
@@ -416,36 +417,68 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # --- TRUE CLIPPED 2D GRADIENT GRID (ZERO END LEAKS) ---
-    # Downsample points for smooth vertical mesh
-    grid_df = df_plot_lines.dropna(subset=["raffica_plot_y"]).sort_values("timestamp").reset_index(drop=True)
-    if len(grid_df) >= 2:
-        num_x = min(len(grid_df), 180)
-        idx_sample = np.linspace(0, len(grid_df) - 1, num_x).astype(int)
-        x_grid = grid_df["timestamp"].iloc[idx_sample].tolist()
-        y_gust_grid = grid_df["raffica_plot_y"].iloc[idx_sample].to_numpy()
+    t_first = df_plot_lines["timestamp"].min()
+    t_last = df_plot_lines["timestamp"].max()
 
-        num_y = 40
-        y_levels = np.linspace(0, top_y_limit, num_y)
-        bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
+    # 1. 2D Background Gradient Surface (Spans from t_first to t_last only)
+    y_levels = np.linspace(0, top_y_limit, 60)
+    bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
+    z_gradient = np.tile(bft_levels, (2, 1)).T
 
-        # 2D Surface: Mask out any cell above the gust line with NaN (transparent)
-        z_mesh = np.full((num_y, num_x), np.nan)
-        for c in range(num_x):
-            limit_y = y_gust_grid[c]
-            mask_col = y_levels <= limit_y
-            z_mesh[mask_col, c] = bft_levels[mask_col]
+    fig.add_trace(go.Heatmap(
+        x=[t_first, t_last],
+        y=y_levels,
+        z=z_gradient,
+        colorscale=WIND_COLORSCALE_SMOOTH,
+        zmin=0,
+        zmax=8,
+        showscale=False,
+        hoverinfo="skip"
+    ), row=1, col=1)
 
-        fig.add_trace(go.Heatmap(
-            x=x_grid,
-            y=y_levels,
-            z=z_mesh,
-            colorscale=WIND_COLORSCALE_SMOOTH,
-            zmin=0,
-            zmax=8,
-            showscale=False,
-            hoverinfo="skip"
+    # 2. Flank Blockers: Cover any margins outside data bounds
+    if v_start < t_first:
+        fig.add_trace(go.Scatter(
+            x=[v_start, t_first, t_first, v_start, v_start],
+            y=[0, 0, ceiling_y, ceiling_y, 0],
+            fill="toself",
+            fillcolor="#f8fafc",
+            line=dict(color="rgba(0,0,0,0)", width=0),
+            hoverinfo="skip",
+            showlegend=False
         ), row=1, col=1)
+
+    if v_end > t_last:
+        fig.add_trace(go.Scatter(
+            x=[t_last, v_end, v_end, t_last, t_last],
+            y=[0, 0, ceiling_y, ceiling_y, 0],
+            fill="toself",
+            fillcolor="#f8fafc",
+            line=dict(color="rgba(0,0,0,0)", width=0),
+            hoverinfo="skip",
+            showlegend=False
+        ), row=1, col=1)
+
+    # 3. Vector-Perfect Ceiling Mask via tonexty: Masks strictly above the gust line
+    fig.add_trace(go.Scatter(
+        x=df_plot_lines["timestamp"],
+        y=df_plot_lines["raffica_plot_y"],
+        mode="lines",
+        line=dict(color="rgba(0,0,0,0)", width=0),
+        hoverinfo="skip",
+        showlegend=False
+    ), row=1, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=df_plot_lines["timestamp"],
+        y=[ceiling_y] * len(df_plot_lines),
+        mode="lines",
+        fill="tonexty",
+        fillcolor="#f8fafc",
+        line=dict(color="rgba(0,0,0,0)", width=0),
+        hoverinfo="skip",
+        showlegend=False
+    ), row=1, col=1)
 
     # Subplot 1: Gust Trace
     fig.add_trace(go.Scatter(
