@@ -3,7 +3,6 @@ import math
 import os
 import numpy as np
 import pandas as pd
-from scipy.ndimage import gaussian_filter
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
@@ -421,7 +420,7 @@ if df_all is not None and not df_all.empty:
     t_first = df_plot_lines["timestamp"].min()
     t_last = df_plot_lines["timestamp"].max()
 
-    # --- MAXIMUM-RESOLUTION 2D MESH WITH GAUSSIAN BLUR SMOOTHING ---
+    # --- PURE NUMPY HIGH-RES SMOOTH MESH HEATMAP ---
     num_x = 900
     x_grid = pd.date_range(start=t_first, end=t_last, periods=num_x)
     num_y = 200
@@ -440,11 +439,17 @@ if df_all is not None and not df_all.empty:
             mask_col = y_levels <= limit_y
             z_mesh[mask_col, c] = bft_levels[mask_col]
 
-    # Apply 2D Gaussian filter to blend adjacent cells and eliminate all stair-stepping
-    valid_mask = ~np.isnan(z_mesh)
-    z_filled = np.where(valid_mask, z_mesh, 0)
-    z_smoothed = gaussian_filter(z_filled, sigma=1.2)
-    z_mesh_final = np.where(valid_mask, z_smoothed, np.nan)
+    # Pure NumPy smoothing kernel to replace scipy gaussian_filter
+    def numpy_smooth(arr, kernel_size=3):
+        valid_mask = ~np.isnan(arr)
+        filled = np.where(valid_mask, arr, 0.0)
+        kernel = np.ones(kernel_size) / kernel_size
+        # Convolve horizontally and vertically
+        smoothed_h = np.apply_along_axis(lambda m: np.convolve(m, kernel, mode='same'), axis=1, arr=filled)
+        smoothed = np.apply_along_axis(lambda m: np.convolve(m, kernel, mode='same'), axis=0, arr=smoothed_h)
+        return np.where(valid_mask, smoothed, np.nan)
+
+    z_mesh_final = numpy_smooth(z_mesh, kernel_size=3)
 
     fig.add_trace(go.Heatmap(
         x=x_grid,
@@ -651,7 +656,7 @@ if df_all is not None and not df_all.empty:
                 y=temp_night,
                 mode="lines+markers",
                 name="Temp (Night: 19-06h)",
-                connectg_aps=False,
+                connectgaps=False,
                 line=dict(color="#1e3a8a", width=1.8 if span_h >= 720 else 2.2),
                 marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#1e3a8a"),
                 hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
@@ -774,21 +779,21 @@ if df_all is not None and not df_all.empty:
         margin=dict(l=35, r=20, t=50, b=30)
     )
 
-    st.plotly_chart(
-        fig,
-        use_container_width=True,
-        config={
-            "scrollZoom": True,
-            "displayModeBar": True,
-            "displaylogo": False,
-            "modeBarButtonsToRemove": ["lasso2d", "select2d"]
-        }
-    )
+st.plotly_chart(
+    fig,
+    use_container_width=True,
+    config={
+        "scrollZoom": True,
+        "displayModeBar": True,
+        "displaylogo": False,
+        "modeBarButtonsToRemove": ["lasso2d", "select2d"]
+    }
+)
 
-    with st.expander("📋 View Data Log (Active Window)"):
-        st.dataframe(
-            df_slice.sort_values("timestamp", ascending=False),
-            use_container_width=True
-        )
+with st.expander("📋 View Data Log (Active Window)"):
+    st.dataframe(
+        df_slice.sort_values("timestamp", ascending=False),
+        use_container_width=True
+    )
 else:
     st.info("No data file found yet.")
