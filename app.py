@@ -414,14 +414,384 @@ if df_all is not None and not df_all.empty:
             "<b>Wind direction</b>",
             "<b>Temperature (°C)</b>" if has_temp else None
         ),
-        row_heights=[0.54, 0.28, 0.A `SyntaxError` right on an `else:` statement is very common in Python. Because Python relies strictly on indentation and structure, this error almost always means the parser got confused by something right at that line or just above it. 
+        row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
+    )
 
-Here are the most common culprits to check around **line 798** in your `app.py` file:
+    t_first = df_plot_lines["timestamp"].min()
+    t_last = df_plot_lines["timestamp"].max()
 
-*   **Indentation Mismatch:** The `else:` keyword must align vertically with its corresponding `if`, `for`, `while`, or `try` statement. If you mixed tabs and spaces, or if the indentation is off by even one space, Python will throw this error.
-*   **Missing or Broken Preceding Statement:** Ensure there is a valid `if` (or other block) directly above it, and that the `if` line ends with a colon (`:`). If the `if` block is empty, you must use the `pass` keyword inside it.
-*   **Unclosed Parentheses, Brackets, or Quotes Above:** If you have an unclosed bracket (`(`, `[`, `{`) or an open string somewhere on the lines just before 798, Python’s parser loses track of where it is and often flags the `else:` as the exact spot where things finally break.
-*   **A Rogue Semicolon or Character:** Look closely at the end of the line immediately preceding `else:` to ensure no accidental typos broke the syntax.
+    # --- PURE NUMPY HIGH-RES SMOOTH MESH HEATMAP ---
+    num_x = 900
+    x_grid = pd.date_range(start=t_first, end=t_last, periods=num_x)
+    num_y = 200
+    y_levels = np.linspace(0, top_y_limit, num_y)
+    bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
 
-**How to fix it:**
-Take a quick look at lines 790 through 802 in your code. If you'd like to paste that snippet here, I'd be happy to take a look and help you spot the exact typo!
+    df_temp_interp = df_plot_lines.set_index("timestamp")[["raffica_plot_y"]]
+    all_idx = df_temp_interp.index.union(x_grid)
+    df_interp = df_temp_interp.reindex(all_idx).interpolate(method="time").reindex(x_grid)
+    gust_y_grid = pd.to_numeric(df_interp["raffica_plot_y"], errors="coerce").to_numpy()
+
+    z_mesh = np.full((num_y, num_x), np.nan)
+    for c, t_val in enumerate(x_grid):
+        limit_y = gust_y_grid[c]
+        if not np.isnan(limit_y):
+            mask_col = y_levels <= limit_y
+            z_mesh[mask_col, c] = bft_levels[mask_col]
+
+    def numpy_smooth(arr, kernel_size=3):
+        valid_mask = ~np.isnan(arr)
+        filled = np.where(valid_mask, arr, 0.0)
+        kernel = np.ones(kernel_size) / kernel_size
+        smoothed_h = np.apply_along_axis(lambda m: np.convolve(m, kernel, mode='same'), axis=1, arr=filled)
+        smoothed = np.apply_along_axis(lambda m: np.convolve(m, kernel, mode='same'), axis=0, arr=smoothed_h)
+        return np.where(valid_mask, smoothed, np.nan)
+
+    z_mesh_final = numpy_smooth(z_mesh, kernel_size=3)
+
+    fig.add_trace(go.Heatmap(
+        x=x_grid,
+        y=y_levels,
+        z=z_mesh_final,
+        colorscale=WIND_COLORSCALE_SMOOTH,
+        zmin=0,
+        zmax=8,
+        zsmooth='best',
+        showscale=False,
+        hoverinfo="skip"
+    ), row=1, col=1)
+
+    # --- INVERTED MASK: BLOCKS OUT EVERYTHING ABOVE GUST LINE ---
+    x_mask = [t_first] + list(df_plot_lines["timestamp"]) + [t_last, t_last, t_first]
+    y_mask = [df_plot_lines["raffica_plot_y"].iloc[0]] + list(df_plot_lines["raffica_plot_y"]) + [
+        df_plot_lines["raffica_plot_y"].iloc[-1], top_y_limit * 1.05, top_y_limit * 1.05
+    ]
+
+    fig.add_trace(go.Scatter(
+        x=x_mask,
+        y=y_mask,
+        fill="toself",
+        fillcolor="#ffffff",
+        line=dict(color="rgba(255, 255, 255, 0)", width=0),
+        hoverinfo="skip",
+        showlegend=False
+    ), row=1, col=1)
+
+    # --- FLANK BLOCKERS: COVER VIEWPORT MARGINS OUTSIDE DATA BOUNDS ---
+    ceiling_y = top_y_limit * 1.25
+    if v_start < t_first:
+        fig.add_trace(go.Scatter(
+            x=[v_start, t_first, t_first, v_start, v_start],
+            y=[0, 0, ceiling_y, ceiling_y, 0],
+            fill="toself",
+            fillcolor="#ffffff",
+            line=dict(color="rgba(0,0,0,0)", width=0),
+            hoverinfo="skip",
+            showlegend=False
+        ), row=1, col=1)
+
+    if v_end > t_last:
+        fig.add_trace(go.Scatter(
+            x=[t_last, v_end, v_end, t_last, t_last],
+            y=[0, 0, ceiling_y, ceiling_y, 0],
+            fill="toself",
+            fillcolor="#ffffff",
+            line=dict(color="rgba(0,0,0,0)", width=0),
+            hoverinfo="skip",
+            showlegend=False
+        ), row=1, col=1)
+
+    # Subplot 1: Gust Trace
+    fig.add_trace(go.Scatter(
+        x=df_plot_lines["timestamp"],
+        y=df_plot_lines["raffica_plot_y"],
+        text=df_plot_lines["gust_label"],
+        textposition="top center",
+        textfont=dict(family="Arial, sans-serif", size=9.5 if span_h >= 720 else 10.0, color="#b91c1c"),
+        customdata=np.stack((df_plot_lines["raffica_bft"], df_plot_lines["raffica_knots"]), axis=-1),
+        mode="lines+markers+text",
+        name="Gust (Raffica)",
+        connectgaps=True,
+        line=dict(color="#0f172a", width=1.4 if span_h >= 720 else 1.6, dash="dot"),
+        marker=dict(symbol="circle", size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
+        hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
+    ), row=1, col=1)
+
+    # Subplot 1: Sustained Speed Trace
+    fig.add_trace(go.Scatter(
+        x=df_plot_lines["timestamp"],
+        y=df_plot_lines["velocita_plot_y"],
+        text=df_plot_lines["speed_label"],
+        textposition="bottom center",
+        textfont=dict(family="Arial, sans-serif", size=9.5 if span_h >= 720 else 10.0, color="#0f172a"),
+        customdata=np.stack((df_plot_lines["velocita_bft"], df_plot_lines["velocita_knots"], df_plot_lines["direzione_deg"]), axis=-1),
+        mode="lines+markers+text",
+        name="Wind Speed (Avg)",
+        connectgaps=True,
+        line=dict(color="#0f172a", width=1.8 if span_h >= 720 else 2.2),
+        marker=dict(size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
+        hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
+    ), row=1, col=1)
+
+    # Stemmed mini vector arrows
+    mini_arrow_len = 18
+    for pt in labeled_speed_points:
+        deg = pt["direzione_deg"]
+        if pd.isna(deg) or pd.isna(pt["velocita_plot_y"]):
+            continue
+
+        angle_rad = math.radians((float(deg) + 180.0) % 360.0)
+        dx = mini_arrow_len * math.sin(angle_rad)
+        dy = mini_arrow_len * math.cos(angle_rad)
+
+        fig.add_annotation(
+            x=pt["timestamp"],
+            y=pt["velocita_plot_y"],
+            xref="x1",
+            yref="y1",
+            yshift=-24,
+            ax=-dx,
+            ay=dy,
+            axref="pixel",
+            ayref="pixel",
+            showarrow=True,
+            arrowhead=2,
+            arrowsize=1.35,
+            arrowwidth=1.3,
+            arrowcolor="#0f172a",
+            opacity=0.95
+        )
+
+    # Subplot 2: Direction Trace
+    fig.add_trace(go.Scatter(
+        x=df_plot_lines["timestamp"],
+        y=df_plot_lines["direzione_deg"],
+        mode="markers",
+        name="Direction",
+        connectgaps=False,
+        marker=dict(symbol="circle", size=2.5 if span_h >= 720 else (3.0 if span_h >= 72 else 3.5), color="#64748b"),
+        customdata=df_plot_lines[["direzione_cardinal", "velocita_knots", "velocita_bft"]],
+        hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
+    ), row=2, col=1)
+
+    # Subplot 2: Direction Arrows
+    df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
+    df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
+
+    target_arrow_count = 14 if span_h >= 720 else (18 if span_h >= 72 else 25)
+    steady_step = max(3, len(df_for_arrows) // target_arrow_count)
+    selected_indices = []
+    if not df_for_arrows.empty:
+        selected_indices.append(0)
+        last_idx = 0
+        last_deg = df_for_arrows.loc[0, "direzione_deg"]
+
+        for i in range(1, len(df_for_arrows)):
+            curr_deg = df_for_arrows.loc[i, "direzione_deg"]
+            if pd.isna(curr_deg):
+                continue
+            delta_deg = abs((curr_deg - last_deg + 180) % 360 - 180)
+            points_since_last = i - last_idx
+
+            angle_sens = 45.0 if span_h >= 720 else (35.0 if span_h >= 72 else 20.0)
+            if delta_deg > angle_sens or points_since_last >= steady_step:
+                selected_indices.append(i)
+                last_idx = i
+                last_deg = curr_deg
+
+    df_sub = df_for_arrows.iloc[selected_indices]
+    arrow_length_px = 36
+
+    for _, row_data in df_sub.iterrows():
+        angle_deg = row_data["arrow_angle"]
+        speed_val = row_data["velocita_knots"]
+
+        if pd.isna(angle_deg) or pd.isna(row_data["direzione_deg"]):
+            continue
+
+        arrow_color = "#16a34a" if (pd.notnull(speed_val) and speed_val >= 18.0) else "#dc2626"
+        rad = math.radians(angle_deg)
+        dx = arrow_length_px * math.sin(rad)
+        dy = arrow_length_px * math.cos(rad)
+
+        fig.add_annotation(
+            x=row_data["timestamp"],
+            y=row_data["direzione_deg"],
+            xref="x2",
+            yref="y2",
+            ax=-dx,
+            ay=dy,
+            axref="pixel",
+            ayref="pixel",
+            showarrow=True,
+            arrowhead=2,
+            arrowsize=2,
+            arrowwidth=1.5,
+            arrowcolor=arrow_color,
+            opacity=0.9
+        )
+
+    # Subplot 3: Temperature
+    if has_temp:
+        is_day = df_plot_lines["timestamp"].dt.hour.between(6, 18)
+        temp_day = df_plot_lines["temperatura_c"].where(is_day, np.nan)
+        temp_night = df_plot_lines["temperatura_c"].where(~is_day, np.nan)
+
+        fig.add_trace(go.Scatter(
+            x=df_plot_lines["timestamp"],
+            y=temp_day,
+            mode="lines+markers",
+            name="Temp (Day: 06-19h)",
+            connectgaps=False,
+            line=dict(color="#eab308", width=1.8 if span_h >= 720 else 2.2),
+            marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#eab308"),
+            hovertemplate="<b>Temp (Day):</b> %{y:.1f} °C<extra></extra>"
+        ), row=3, col=1)
+
+        if not daytime_only:
+            fig.add_trace(go.Scatter(
+                x=df_plot_lines["timestamp"],
+                y=temp_night,
+                mode="lines+markers",
+                name="Temp (Night: 19-06h)",
+                connectgaps=False,
+                line=dict(color="#1e3a8a", width=1.8 if span_h >= 720 else 2.2),
+                marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#1e3a8a"),
+                hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
+            ), row=3, col=1)
+
+        fig.update_yaxes(
+            title_text="<b>°C</b>",
+            title_font=dict(color="#0f172a", size=12),
+            tickfont=dict(color="#0f172a", size=11),
+            showline=False,
+            gridcolor="#cbd5e1",
+            fixedrange=True,
+            row=3, col=1
+        )
+
+    # Windguru Midnight Date Dividers & In-Graph Date Headers
+    day_cursor = v_start.floor("D")
+    while day_cursor <= v_end + pd.Timedelta(days=1):
+        midnight = day_cursor
+        if v_start <= midnight <= v_end:
+            fig.add_vline(
+                x=midnight,
+                line_width=1.2,
+                line_dash="dash",
+                line_color="#64748b",
+                opacity=0.6
+            )
+            fig.add_annotation(
+                x=midnight + pd.Timedelta(hours=1),
+                y=top_y_limit * 0.96,
+                xref="x1",
+                yref="y1",
+                text=f"<b>{midnight.strftime('%a %d %b')}</b>",
+                showarrow=False,
+                font=dict(size=10, color="#334155"),
+                bgcolor="rgba(255, 255, 255, 0.85)",
+                bordercolor="#cbd5e1",
+                borderwidth=1,
+                borderpad=2,
+                xanchor="left"
+            )
+        day_cursor += pd.Timedelta(days=1)
+
+    # Axis Calibrations
+    bft_ticks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    bft_stretched_vals = [bft_to_stretched(b) for b in bft_ticks]
+    bft_labels = [
+        "0 Bft", "1 Bft", "2 Bft", "3 Bft (Gentle)", "4 Bft (Moderate)",
+        "5 Bft (Fresh)", "6 Bft (Strong)", "7 Bft (Near Gale)", "8 Bft (Gale)", "9 Bft (Storm)"
+    ]
+
+    fig.update_yaxes(
+        title_text="<b>Beaufort Force (Stretched)</b>",
+        title_font=dict(color="#0f172a", size=12),
+        range=[0, top_y_limit],
+        tickvals=bft_stretched_vals,
+        ticktext=bft_labels,
+        tickfont=dict(color="#0f172a", size=11),
+        showline=False,
+        gridcolor="#cbd5e1",
+        zerolinecolor="#cbd5e1",
+        fixedrange=True,
+        row=1, col=1
+    )
+
+    fig.update_yaxes(
+        title_text="<b>Direction</b>",
+        title_font=dict(color="#0f172a", size=12),
+        range=[-35, 395],
+        tickvals=[0, 90, 180, 270, 360],
+        ticktext=["N (0°)", "E (90°)", "S (180°)", "W (270°)", "N (360°)"],
+        tickfont=dict(color="#0f172a", size=11),
+        showline=False,
+        gridcolor="#cbd5e1",
+        fixedrange=True,
+        row=2, col=1
+    )
+
+    if span_h >= 720:
+        dtick_val = 24 * 3600 * 1000
+        tick_format_str = "%a %d.%m."
+    elif span_h >= 168:
+        dtick_val = 6 * 3600 * 1000
+        tick_format_str = "%Hh<br>%a %d"
+    elif span_h >= 72:
+        dtick_val = 3 * 3600 * 1000
+        tick_format_str = "%H:00<br>%a %d"
+    elif span_h >= 24:
+        dtick_val = 2 * 3600 * 1000
+        tick_format_str = "%H:00<br>%a %d"
+    else:
+        dtick_val = 1 * 3600 * 1000
+        tick_format_str = "%H:00"
+
+    fig.update_xaxes(
+        range=[v_start, v_end],
+        gridcolor="#cbd5e1",
+        showgrid=True,
+        dtick=dtick_val,
+        tickformat=tick_format_str,
+        tickfont=dict(color="#0f172a", size=10.5, family="Arial, sans-serif"),
+        showline=False
+    )
+
+    fig.update_layout(
+        height=780 if has_temp else 600,
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        font=dict(color="#1e293b", family="Arial, sans-serif"),
+        dragmode="pan",
+        hovermode="x unified",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            bgcolor="rgba(255, 255, 255, 0.9)"
+        ),
+        margin=dict(l=35, r=20, t=50, b=30)
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            "scrollZoom": True,
+            "displayModeBar": True,
+            "displaylogo": False,
+            "modeBarButtonsToRemove": ["lasso2d", "select2d"]
+        }
+    )
+
+    with st.expander("📋 View Data Log (Active Window)"):
+        st.dataframe(
+            df_slice.sort_values("timestamp", ascending=False),
+            use_container_width=True
+        )
+else:
+    st.info("No data file found yet.")
