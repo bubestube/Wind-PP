@@ -358,30 +358,24 @@ if df_all is not None and not df_all.empty:
         st.warning("No records in selected window.")
         df_slice = df_all.tail(20).copy()
 
-    # --- Adaptive Density Reduction & Continuous Grid Setup ---
+    # --- Adaptive Density Reduction for Trace Markers ---
     span_h = st.session_state.window_span_hours
     if span_h >= 720:          # 30 Days: 2-hour buckets
         resample_rule = "2h"
-        bar_width_ms = int(2.05 * 60 * 60 * 1000)
     elif span_h >= 168:        # 7 Days: 30-minute buckets
         resample_rule = "30min"
-        bar_width_ms = int(30.8 * 60 * 1000)
     elif span_h >= 72:         # 3 Days: 15-minute buckets
         resample_rule = "15min"
-        bar_width_ms = int(15.4 * 60 * 1000)
     else:                      # <= 1 Day: Native resolution
         resample_rule = None
-        bar_width_ms = int(2.2 * 60 * 1000)
 
     if resample_rule is not None and not df_slice.empty:
-        # Resample on continuous grid
         df_agg = df_slice.set_index("timestamp").resample(resample_rule).agg({
             "velocita_knots": "mean",
             "raffica_knots": "max",
             "direzione_deg": "mean",
             "temperatura_c": "mean"
         })
-        # Interpolate small reporting gaps (up to 3 periods) so bars are seamlessly continuous
         df_resampled = df_agg.interpolate(method="time", limit=3).dropna(subset=["velocita_knots"]).reset_index()
         df_resampled["direzione_cardinal"] = df_resampled["direzione_deg"].apply(deg_to_cardinal)
         df_slice = df_resampled
@@ -502,16 +496,33 @@ if df_all is not None and not df_all.empty:
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
 
-    # Fast Gradient Fill Interpolation (Produces uniform, gapless gradient strips)
+    # High-Density Fluid Gradient Mesh (Independent from Line Decimation)
+    if span_h >= 720:
+        fill_res = "5min"
+        bar_width_ms = int(5.25 * 60 * 1000)
+    elif span_h >= 168:
+        fill_res = "3min"
+        bar_width_ms = int(3.15 * 60 * 1000)
+    elif span_h >= 72:
+        fill_res = "2min"
+        bar_width_ms = int(2.1 * 60 * 1000)
+    else:
+        fill_res = "1min"
+        bar_width_ms = int(1.1 * 60 * 1000)
+
     fill_segments = []
     seg_start = 0
     gap_pos = list(gap_indices) + [len(df_plot)]
-    interp_freq = "2min" if resample_rule is None else resample_rule
 
     for g_pos in gap_pos:
         seg = df_plot.iloc[seg_start:g_pos]
         if len(seg) >= 2:
-            seg_resampled = seg.set_index("timestamp")[["velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]].resample(interp_freq).interpolate(method="time").reset_index()
+            seg_resampled = (
+                seg.set_index("timestamp")[["velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]]
+                .resample(fill_res)
+                .interpolate(method="time")
+                .reset_index()
+            )
             fill_segments.append(seg_resampled)
         elif len(seg) == 1:
             fill_segments.append(seg[["timestamp", "velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]])
