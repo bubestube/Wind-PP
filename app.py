@@ -210,6 +210,10 @@ if df_raw is not None and not df_raw.empty:
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 6
 
+    # Clamping state so it never exceeds live data
+    if st.session_state.window_end_time > t_global_max.to_pydatetime():
+        st.session_state.window_end_time = t_global_max.to_pydatetime()
+
     window_options = [6, 12, 24, 72, 168, 720]
     curr_span = st.session_state.get("window_span_hours", 6)
     curr_idx = window_options.index(curr_span) if curr_span in window_options else 0
@@ -273,9 +277,11 @@ if df_raw is not None and not df_raw.empty:
             st.session_state.window_end_time = max_allowable_end
             st.rerun()
 
-    cur_end = pd.to_datetime(st.session_state.window_end_time)
-    cur_start = cur_end - pd.Timedelta(hours=span_h)
-    month_str = cur_end.strftime("%B %Y") if cur_start.strftime("%B %Y") == cur_end.strftime("%B %Y") else f"{cur_start.strftime('%B')} – {cur_end.strftime('%B %Y')}"
+    # Hard ceiling clamp: window_end can never exceed t_global_max
+    v_end = min(pd.to_datetime(st.session_state.window_end_time), t_global_max)
+    v_start = v_end - pd.Timedelta(hours=span_h)
+
+    month_str = v_end.strftime("%B %Y") if v_start.strftime("%B %Y") == v_end.strftime("%B %Y") else f"{v_start.strftime('%B')} – {v_end.strftime('%B %Y')}"
     st.markdown(
         f'<div class="slider-month-pill">📅 <span>{month_str}</span> (Step & Bucket: {resample_rule if resample_rule else "Native ~3m"})</div>',
         unsafe_allow_html=True
@@ -286,20 +292,17 @@ if df_raw is not None and not df_raw.empty:
             "Scroll Active Timeline Window:",
             min_value=min_allowable_end,
             max_value=max_allowable_end,
-            value=min(max_allowable_end, max(min_allowable_end, st.session_state.window_end_time)),
+            value=min(max_allowable_end, max(min_allowable_end, v_end.to_pydatetime())),
             format="DD.MM HH:mm",
             step=slider_step_delta
         )
         if scrub_pos != st.session_state.window_end_time:
-            st.session_state.window_end_time = scrub_pos
+            st.session_state.window_end_time = min(scrub_pos, max_allowable_end)
             st.rerun()
 
-    v_end = pd.to_datetime(st.session_state.window_end_time)
-    v_start = v_end - pd.Timedelta(hours=span_h)
-
-    # Slice strictly across active window with safety buffer
-    buffer = pd.Timedelta(hours=2)
-    df_slice = df_raw[(df_raw["timestamp"] >= v_start - buffer) & (df_raw["timestamp"] <= v_end + buffer)].copy()
+    # Buffer only extends into the past; right end is strictly bounded by t_global_max
+    left_buffer = pd.Timedelta(hours=2)
+    df_slice = df_raw[(df_raw["timestamp"] >= v_start - left_buffer) & (df_raw["timestamp"] <= v_end)].copy()
 
     if daytime_only:
         df_slice = df_slice[df_slice["timestamp"].dt.hour.between(6, 18)].copy()
@@ -409,10 +412,11 @@ if df_raw is not None and not df_raw.empty:
 
     t_first = df_chart["timestamp"].min()
     t_last = df_chart["timestamp"].max()
-    bound_left = min(v_start - buffer, t_first)
-    bound_right = max(v_end + buffer, t_last)
+    bound_left = min(v_start - left_buffer, t_first)
+    # Right bound clamped strictly to the curve's end or v_end
+    bound_right = min(v_end, t_last)
 
-    # 1. 2D Continuous Background Gradient Surface
+    # 1. Continuous Gradient Surface
     y_levels = np.linspace(0, top_y_limit, 45)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
     z_gradient = np.tile(bft_levels, (2, 1)).T
@@ -428,8 +432,8 @@ if df_raw is not None and not df_raw.empty:
         hoverinfo="skip"
     ), row=1, col=1)
 
-    # 2. SEPARATE SOLID WHITE MASKS (Completely prevents all leaks at ends & ceiling)
-    # Mask A: Left flank block (if chart bounds extend before first data point)
+    # 2. Masks
+    # Left Wall Mask (Historical void before data starts)
     if bound_left < t_first:
         fig.add_trace(go.Scatter(
             x=[bound_left, t_first, t_first, bound_left, bound_left],
@@ -441,10 +445,10 @@ if df_raw is not None and not df_raw.empty:
             showlegend=False
         ), row=1, col=1)
 
-    # Mask B: Right flank block (if chart bounds extend beyond last data point)
-    if bound_right > t_last:
+    # Right Wall Mask (Only needed if panned back in time where v_end exceeds t_last)
+    if v_end > t_last:
         fig.add_trace(go.Scatter(
-            x=[t_last, bound_right, bound_right, t_last, t_last],
+            x=[t_last, v_end, v_end, t_last, t_last],
             y=[0, 0, ceiling_y, ceiling_y, 0],
             fill="toself",
             fillcolor="#ffffff",
@@ -453,8 +457,7 @@ if df_raw is not None and not df_raw.empty:
             showlegend=False
         ), row=1, col=1)
 
-    # Mask C: Curve Ceiling Mask using tonexty (Guaranteed 100% opaque cover above gust curve)
-    # Invisible lower anchor along the exact gust curve
+    # Ceiling Mask via tonexty
     fig.add_trace(go.Scatter(
         x=df_chart["timestamp"],
         y=df_chart["raffica_plot_y"],
@@ -464,7 +467,6 @@ if df_raw is not None and not df_raw.empty:
         showlegend=False
     ), row=1, col=1)
 
-    # Opaque white fill from the gust curve up to the ceiling
     fig.add_trace(go.Scatter(
         x=df_chart["timestamp"],
         y=[ceiling_y] * len(df_chart),
@@ -672,8 +674,9 @@ if df_raw is not None and not df_raw.empty:
         row=2, col=1
     )
 
+    # Clamped to real end point
     fig.update_xaxes(
-        range=[v_start, v_end],
+        range=[v_start, bound_right],
         gridcolor="#cbd5e1",
         showgrid=True,
         showline=False
@@ -702,6 +705,7 @@ if df_raw is not None and not df_raw.empty:
         config={
             "scrollZoom": True,
             "displayModeBar": True,
+            "displaylogo": False,
             "modeBarButtonsToRemove": ["lasso2d", "select2d"]
         }
     )
