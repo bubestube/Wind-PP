@@ -41,6 +41,18 @@ def deg_to_cardinal(deg):
     ix = int(round(deg / (360.0 / len(dirs)))) % len(dirs)
     return dirs[ix]
 
+# Continuous Beaufort Color Scale for Horizontal Area Fill
+WIND_COLORSCALE_SMOOTH = [
+    [0.00, "#ffffff"],  # 0 Bft
+    [0.12, "#e0f2fe"],  # 1 Bft
+    [0.25, "#7dd3fc"],  # 2-3 Bft
+    [0.40, "#38bdf8"],  # 4 Bft
+    [0.55, "#4ade80"],  # 5 Bft
+    [0.70, "#facc15"],  # 6 Bft
+    [0.85, "#c084fc"],  # 7 Bft
+    [1.00, "#f87171"]   # 8+ Bft
+]
+
 def get_wg_badge(val):
     if pd.isna(val):
         return "#94a3b8", "#ffffff"
@@ -276,6 +288,7 @@ if df_all is not None and not df_all.empty:
         unsafe_allow_html=True
     )
 
+    # Windguru Slider with Clean Weekday, Date & Time Formatter
     if min_slider < max_slider:
         timeline_ticks = pd.date_range(start=min_slider, end=max_slider, freq=slider_freq).to_pydatetime().tolist()
         if not timeline_ticks or timeline_ticks[-1] != max_slider:
@@ -324,7 +337,6 @@ if df_all is not None and not df_all.empty:
 
     has_temp = "temperatura_c" in df_slice.columns and df_slice["temperatura_c"].notnull().any()
     df_plot_lines = df_slice.sort_values("timestamp").reset_index(drop=True)
-    df_plot_lines["raffica_plot_y"] = pd.to_numeric(df_plot_lines["raffica_plot_y"], errors="coerce")
 
     max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
     top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
@@ -405,34 +417,34 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    t_first = df_plot_lines["timestamp"].min()
-    t_last = df_plot_lines["timestamp"].max()
+    # --- TRUE CONTINUOUS 2D HORIZONTAL GRADIENT SURFACE ---
+    y_levels = np.linspace(0, top_y_limit, 45)
+    bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
+    z_gradient = np.tile(bft_levels, (2, 1)).T
 
-    # --- 100% SMOOTH SVG AREA FILLS (ZERO COLUMNS OR STAIRS) ---
-    # High-resolution time resampling for buttery vector curves
-    fill_grid_freq = "5min" if span_h <= 24 else ("20min" if span_h <= 168 else "1h")
-    df_fill_base = df_plot_lines.set_index("timestamp")[["velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]].resample(fill_grid_freq).interpolate(method="time").dropna().reset_index()
-
-    # Gust Fill Area
-    fig.add_trace(go.Scatter(
-        x=df_fill_base["timestamp"],
-        y=df_fill_base["raffica_plot_y"],
-        mode="lines",
-        fill="tozeroy",
-        fillcolor="rgba(248, 113, 113, 0.18)",
-        line=dict(color="rgba(0,0,0,0)", width=0),
-        hoverinfo="skip",
-        showlegend=False
+    fig.add_trace(go.Heatmap(
+        x=[v_start, v_end],
+        y=y_levels,
+        z=z_gradient,
+        colorscale=WIND_COLORSCALE_SMOOTH,
+        zmin=0,
+        zmax=8,
+        showscale=False,
+        hoverinfo="skip"
     ), row=1, col=1)
 
-    # Sustained Speed Fill Area
+    # --- INVERTED MASK: BLOCKS OUT EVERYTHING ABOVE GUST LINE ---
+    x_mask = [v_start] + list(df_plot_lines["timestamp"]) + [v_end, v_end, v_start]
+    y_mask = [df_plot_lines["raffica_plot_y"].iloc[0]] + list(df_plot_lines["raffica_plot_y"]) + [
+        df_plot_lines["raffica_plot_y"].iloc[-1], top_y_limit * 1.05, top_y_limit * 1.05
+    ]
+
     fig.add_trace(go.Scatter(
-        x=df_fill_base["timestamp"],
-        y=df_fill_base["velocita_plot_y"],
-        mode="lines",
-        fill="tozeroy",
-        fillcolor="rgba(56, 189, 248, 0.28)",
-        line=dict(color="rgba(0,0,0,0)", width=0),
+        x=x_mask,
+        y=y_mask,
+        fill="toself",
+        fillcolor="#ffffff",
+        line=dict(color="rgba(255, 255, 255, 0)", width=0),
         hoverinfo="skip",
         showlegend=False
     ), row=1, col=1)
