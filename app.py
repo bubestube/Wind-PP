@@ -420,10 +420,10 @@ if df_all is not None and not df_all.empty:
     t_first = df_plot_lines["timestamp"].min()
     t_last = df_plot_lines["timestamp"].max()
 
-    # --- HIGH-RESOLUTION SMOOTH MESH HEATMAP (500x120 Grid) ---
-    num_x = 500
+    # --- ULTRA-HIGH RESOLUTION SMOOTH MESH HEATMAP (700x180 Grid) ---
+    num_x = 700
     x_grid = pd.date_range(start=v_start, end=v_end, periods=num_x)
-    num_y = 120
+    num_y = 180
     y_levels = np.linspace(0, top_y_limit, num_y)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
 
