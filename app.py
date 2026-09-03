@@ -41,16 +41,16 @@ def deg_to_cardinal(deg):
     ix = int(round(deg / (360.0 / len(dirs)))) % len(dirs)
     return dirs[ix]
 
-# Continuous Beaufort Color Scale for Horizontal Area Fill
+# Ultra-smooth Windguru Color Scale
 WIND_COLORSCALE_SMOOTH = [
-    [0.00, "#ffffff"],  # 0 Bft
-    [0.12, "#e0f2fe"],  # 1 Bft
-    [0.25, "#7dd3fc"],  # 2-3 Bft
-    [0.40, "#38bdf8"],  # 4 Bft
-    [0.55, "#4ade80"],  # 5 Bft
-    [0.70, "#facc15"],  # 6 Bft
-    [0.85, "#c084fc"],  # 7 Bft
-    [1.00, "#f87171"]   # 8+ Bft
+    [0.00, "#f8fafc"],
+    [0.12, "#e0f2fe"],
+    [0.25, "#7dd3fc"],
+    [0.40, "#38bdf8"],
+    [0.55, "#4ade80"],
+    [0.70, "#facc15"],
+    [0.85, "#c084fc"],
+    [1.00, "#f87171"]
 ]
 
 def get_wg_badge(val):
@@ -420,9 +420,9 @@ if df_all is not None and not df_all.empty:
     t_first = df_plot_lines["timestamp"].min()
     t_last = df_plot_lines["timestamp"].max()
 
-    # --- PURE NUMPY HIGH-RES SMOOTH MESH HEATMAP ---
-    num_x = 900
-    x_grid = pd.date_range(start=t_first, end=t_last, periods=num_x)
+    # --- ULTRA-HIGH RESOLUTION SMOOTH MESH HEATMAP WITH zsmooth='best' ---
+    num_x = 800
+    x_grid = pd.date_range(start=v_start, end=v_end, periods=num_x)
     num_y = 200
     y_levels = np.linspace(0, top_y_limit, num_y)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
@@ -434,72 +434,23 @@ if df_all is not None and not df_all.empty:
 
     z_mesh = np.full((num_y, num_x), np.nan)
     for c, t_val in enumerate(x_grid):
-        limit_y = gust_y_grid[c]
-        if not np.isnan(limit_y):
-            mask_col = y_levels <= limit_y
-            z_mesh[mask_col, c] = bft_levels[mask_col]
-
-    def numpy_smooth(arr, kernel_size=3):
-        valid_mask = ~np.isnan(arr)
-        filled = np.where(valid_mask, arr, 0.0)
-        kernel = np.ones(kernel_size) / kernel_size
-        smoothed_h = np.apply_along_axis(lambda m: np.convolve(m, kernel, mode='same'), axis=1, arr=filled)
-        smoothed = np.apply_along_axis(lambda m: np.convolve(m, kernel, mode='same'), axis=0, arr=smoothed_h)
-        return np.where(valid_mask, smoothed, np.nan)
-
-    z_mesh_final = numpy_smooth(z_mesh, kernel_size=3)
+        if t_first <= t_val <= t_last:
+            limit_y = gust_y_grid[c]
+            if not np.isnan(limit_y):
+                mask_col = y_levels <= limit_y
+                z_mesh[mask_col, c] = bft_levels[mask_col]
 
     fig.add_trace(go.Heatmap(
         x=x_grid,
         y=y_levels,
-        z=z_mesh_final,
+        z=z_mesh,
         colorscale=WIND_COLORSCALE_SMOOTH,
         zmin=0,
         zmax=8,
-        zsmooth='best',
+        zsmooth='best',  # <--- Browser-level bilinear interpolation removes columns on zoom!
         showscale=False,
         hoverinfo="skip"
     ), row=1, col=1)
-
-    # --- INVERTED MASK: BLOCKS OUT EVERYTHING ABOVE GUST LINE ---
-    x_mask = [t_first] + list(df_plot_lines["timestamp"]) + [t_last, t_last, t_first]
-    y_mask = [df_plot_lines["raffica_plot_y"].iloc[0]] + list(df_plot_lines["raffica_plot_y"]) + [
-        df_plot_lines["raffica_plot_y"].iloc[-1], top_y_limit * 1.05, top_y_limit * 1.05
-    ]
-
-    fig.add_trace(go.Scatter(
-        x=x_mask,
-        y=y_mask,
-        fill="toself",
-        fillcolor="#ffffff",
-        line=dict(color="rgba(255, 255, 255, 0)", width=0),
-        hoverinfo="skip",
-        showlegend=False
-    ), row=1, col=1)
-
-    # --- FLANK BLOCKERS: COVER VIEWPORT MARGINS OUTSIDE DATA BOUNDS ---
-    ceiling_y = top_y_limit * 1.25
-    if v_start < t_first:
-        fig.add_trace(go.Scatter(
-            x=[v_start, t_first, t_first, v_start, v_start],
-            y=[0, 0, ceiling_y, ceiling_y, 0],
-            fill="toself",
-            fillcolor="#ffffff",
-            line=dict(color="rgba(0,0,0,0)", width=0),
-            hoverinfo="skip",
-            showlegend=False
-        ), row=1, col=1)
-
-    if v_end > t_last:
-        fig.add_trace(go.Scatter(
-            x=[t_last, v_end, v_end, t_last, t_last],
-            y=[0, 0, ceiling_y, ceiling_y, 0],
-            fill="toself",
-            fillcolor="#ffffff",
-            line=dict(color="rgba(0,0,0,0)", width=0),
-            hoverinfo="skip",
-            showlegend=False
-        ), row=1, col=1)
 
     # Subplot 1: Gust Trace
     fig.add_trace(go.Scatter(
