@@ -336,6 +336,7 @@ if df_all is not None and not df_all.empty:
 
     has_temp = "temperatura_c" in df_slice.columns and df_slice["temperatura_c"].notnull().any()
     df_plot_lines = df_slice.sort_values("timestamp").reset_index(drop=True)
+    df_plot_lines["raffica_plot_y"] = pd.to_numeric(df_plot_lines["raffica_plot_y"], errors="coerce")
 
     max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
     top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
@@ -426,10 +427,10 @@ if df_all is not None and not df_all.empty:
     y_levels = np.linspace(0, top_y_limit, num_y)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
 
-    df_temp_interp = df_plot_lines.set_index("timestamp")
+    df_temp_interp = df_plot_lines.set_index("timestamp")[["raffica_plot_y"]]
     all_idx = df_temp_interp.index.union(x_grid)
     df_interp = df_temp_interp.reindex(all_idx).interpolate(method="time").reindex(x_grid)
-    gust_y_grid = df_interp["raffica_plot_y"].to_numpy()
+    gust_y_grid = pd.to_numeric(df_interp["raffica_plot_y"], errors="coerce").to_numpy()
 
     z_mesh = np.full((num_y, num_x), np.nan)
     for c, t_val in enumerate(x_grid):
