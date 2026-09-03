@@ -41,8 +41,9 @@ def deg_to_cardinal(deg):
     ix = int(round(deg / (360.0 / len(dirs)))) % len(dirs)
     return dirs[ix]
 
+# Continuous Beaufort Color Scale for Area Fill
 WIND_COLORSCALE_SMOOTH = [
-    [0.00, "#ffffff"],
+    [0.00, "#f8fafc"],
     [0.12, "#e0f2fe"],
     [0.25, "#7dd3fc"],
     [0.40, "#38bdf8"],
@@ -415,39 +416,36 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    t_first = df_plot_lines["timestamp"].min()
+    # --- TRUE CLIPPED 2D GRADIENT GRID (ZERO END LEAKS) ---
+    # Downsample points for smooth vertical mesh
+    grid_df = df_plot_lines.dropna(subset=["raffica_plot_y"]).sort_values("timestamp").reset_index(drop=True)
+    if len(grid_df) >= 2:
+        num_x = min(len(grid_df), 180)
+        idx_sample = np.linspace(0, len(grid_df) - 1, num_x).astype(int)
+        x_grid = grid_df["timestamp"].iloc[idx_sample].tolist()
+        y_gust_grid = grid_df["raffica_plot_y"].iloc[idx_sample].to_numpy()
 
-    # 1. Background Gradient Heatmap: ONLY and FIRST starts with the first data point
-    y_levels = np.linspace(0, top_y_limit, 45)
-    bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
-    z_gradient = np.tile(bft_levels, (2, 1)).T
+        num_y = 40
+        y_levels = np.linspace(0, top_y_limit, num_y)
+        bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
 
-    fig.add_trace(go.Heatmap(
-        x=[t_first, v_end],
-        y=y_levels,
-        z=z_gradient,
-        colorscale=WIND_COLORSCALE_SMOOTH,
-        zmin=0,
-        zmax=8,
-        showscale=False,
-        hoverinfo="skip"
-    ), row=1, col=1)
+        # 2D Surface: Mask out any cell above the gust line with NaN (transparent)
+        z_mesh = np.full((num_y, num_x), np.nan)
+        for c in range(num_x):
+            limit_y = y_gust_grid[c]
+            mask_col = y_levels <= limit_y
+            z_mesh[mask_col, c] = bft_levels[mask_col]
 
-    # 2. Inverted Mask: Traces strictly from t_first along the curve to v_end
-    x_mask = [t_first] + list(df_plot_lines["timestamp"]) + [v_end, v_end, t_first]
-    y_mask = [df_plot_lines["raffica_plot_y"].iloc[0]] + list(df_plot_lines["raffica_plot_y"]) + [
-        df_plot_lines["raffica_plot_y"].iloc[-1], top_y_limit * 1.05, top_y_limit * 1.05
-    ]
-
-    fig.add_trace(go.Scatter(
-        x=x_mask,
-        y=y_mask,
-        fill="toself",
-        fillcolor="#ffffff",
-        line=dict(color="rgba(255, 255, 255, 0)", width=0),
-        hoverinfo="skip",
-        showlegend=False
-    ), row=1, col=1)
+        fig.add_trace(go.Heatmap(
+            x=x_grid,
+            y=y_levels,
+            z=z_mesh,
+            colorscale=WIND_COLORSCALE_SMOOTH,
+            zmin=0,
+            zmax=8,
+            showscale=False,
+            hoverinfo="skip"
+        ), row=1, col=1)
 
     # Subplot 1: Gust Trace
     fig.add_trace(go.Scatter(
@@ -592,7 +590,7 @@ if df_all is not None and not df_all.empty:
             name="Temp (Day: 06-19h)",
             connectgaps=False,
             line=dict(color="#eab308", width=1.8 if span_h >= 720 else 2.2),
-            marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#eab308", line=dict(color="#ca8a04", width=1)),
+            marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#eab308"),
             hovertemplate="<b>Temp (Day):</b> %{y:.1f} °C<extra></extra>"
         ), row=3, col=1)
 
@@ -604,7 +602,7 @@ if df_all is not None and not df_all.empty:
                 name="Temp (Night: 19-06h)",
                 connectgaps=False,
                 line=dict(color="#1e3a8a", width=1.8 if span_h >= 720 else 2.2),
-                marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#1e3a8a", line=dict(color="#0f172a", width=1)),
+                marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#1e3a8a"),
                 hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
             ), row=3, col=1)
 
