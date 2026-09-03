@@ -281,14 +281,12 @@ if df_all is not None and not df_all.empty:
     v_end = min(pd.to_datetime(st.session_state.window_end_time), t_global_max)
     v_start = v_end - pd.Timedelta(hours=span_h)
 
-    # Active Window Tag Header
     date_header_str = f"{v_start.strftime('%a %d.%m. %H:%M')} – {v_end.strftime('%a %d.%m. %H:%M')}"
     st.markdown(
         f'<div class="slider-month-pill">📅 <span><b>{date_header_str}</b></span> ({span_h}h View)</div>',
         unsafe_allow_html=True
     )
 
-    # Windguru Slider with Clean Weekday, Date & Time Formatter
     if min_slider < max_slider:
         timeline_ticks = pd.date_range(start=min_slider, end=max_slider, freq=slider_freq).to_pydatetime().tolist()
         if not timeline_ticks or timeline_ticks[-1] != max_slider:
@@ -309,7 +307,6 @@ if df_all is not None and not df_all.empty:
             st.session_state.window_end_time = chosen_dt
             st.rerun()
 
-    # Slice strictly within viewport
     df_slice = df_all[(df_all["timestamp"] >= v_start) & (df_all["timestamp"] <= v_end)].copy()
 
     if daytime_only:
@@ -418,13 +415,15 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # 1. Background Gradient Heatmap
+    t_first = df_plot_lines["timestamp"].min()
+
+    # 1. Background Gradient Heatmap: ONLY and FIRST starts with the first data point
     y_levels = np.linspace(0, top_y_limit, 45)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
     z_gradient = np.tile(bft_levels, (2, 1)).T
 
     fig.add_trace(go.Heatmap(
-        x=[v_start, v_end],
+        x=[t_first, v_end],
         y=y_levels,
         z=z_gradient,
         colorscale=WIND_COLORSCALE_SMOOTH,
@@ -434,8 +433,8 @@ if df_all is not None and not df_all.empty:
         hoverinfo="skip"
     ), row=1, col=1)
 
-    # 2. Inverted Mask (Polygon Ceiling)
-    x_mask = [v_start] + list(df_plot_lines["timestamp"]) + [v_end, v_end, v_start]
+    # 2. Inverted Mask: Traces strictly from t_first along the curve to v_end
+    x_mask = [t_first] + list(df_plot_lines["timestamp"]) + [v_end, v_end, t_first]
     y_mask = [df_plot_lines["raffica_plot_y"].iloc[0]] + list(df_plot_lines["raffica_plot_y"]) + [
         df_plot_lines["raffica_plot_y"].iloc[-1], top_y_limit * 1.05, top_y_limit * 1.05
     ]
@@ -631,7 +630,6 @@ if df_all is not None and not df_all.empty:
                 line_color="#64748b",
                 opacity=0.6
             )
-            # Date Badge Label anchored in graph at the top of the Wind plot
             fig.add_annotation(
                 x=midnight + pd.Timedelta(hours=1),
                 y=top_y_limit * 0.96,
@@ -683,21 +681,20 @@ if df_all is not None and not df_all.empty:
         row=2, col=1
     )
 
-    # Windguru In-Graph Date & Time Axis Formatting
     if span_h >= 720:
-        dtick_val = 24 * 3600 * 1000  # 1-day ticks
+        dtick_val = 24 * 3600 * 1000
         tick_format_str = "%a %d.%m."
     elif span_h >= 168:
-        dtick_val = 6 * 3600 * 1000   # 6-hour ticks
+        dtick_val = 6 * 3600 * 1000
         tick_format_str = "%Hh<br>%a %d"
     elif span_h >= 72:
-        dtick_val = 3 * 3600 * 1000   # 3-hour ticks
+        dtick_val = 3 * 3600 * 1000
         tick_format_str = "%H:00<br>%a %d"
     elif span_h >= 24:
-        dtick_val = 2 * 3600 * 1000   # 2-hour ticks
+        dtick_val = 2 * 3600 * 1000
         tick_format_str = "%H:00<br>%a %d"
     else:
-        dtick_val = 1 * 3600 * 1000   # 1-hour ticks
+        dtick_val = 1 * 3600 * 1000
         tick_format_str = "%H:00"
 
     fig.update_xaxes(
