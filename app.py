@@ -420,10 +420,10 @@ if df_all is not None and not df_all.empty:
     t_first = df_plot_lines["timestamp"].min()
     t_last = df_plot_lines["timestamp"].max()
 
-    # --- ULTRA-HIGH RESOLUTION SMOOTH MESH HEATMAP (700x180 Grid) ---
-    num_x = 700
+    # --- ULTRA-HIGH RESOLUTION SMOOTH MESH HEATMAP WITH zsmooth='best' ---
+    num_x = 800
     x_grid = pd.date_range(start=v_start, end=v_end, periods=num_x)
-    num_y = 180
+    num_y = 200
     y_levels = np.linspace(0, top_y_limit, num_y)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
 
@@ -447,6 +447,7 @@ if df_all is not None and not df_all.empty:
         colorscale=WIND_COLORSCALE_SMOOTH,
         zmin=0,
         zmax=8,
+        zsmooth='best',  # <--- Browser-level bilinear interpolation removes columns on zoom!
         showscale=False,
         hoverinfo="skip"
     ), row=1, col=1)
