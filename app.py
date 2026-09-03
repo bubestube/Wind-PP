@@ -420,13 +420,13 @@ if df_all is not None and not df_all.empty:
     t_first = df_plot_lines["timestamp"].min()
     t_last = df_plot_lines["timestamp"].max()
 
-    # 1. Background Gradient Heatmap
+    # 1. Background Gradient Heatmap: ONLY spans strictly between first and last data points
     y_levels = np.linspace(0, top_y_limit, 60)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
     z_gradient = np.tile(bft_levels, (2, 1)).T
 
     fig.add_trace(go.Heatmap(
-        x=[v_start, v_end],
+        x=[t_first, t_last],
         y=y_levels,
         z=z_gradient,
         colorscale=WIND_COLORSCALE_SMOOTH,
@@ -436,11 +436,9 @@ if df_all is not None and not df_all.empty:
         hoverinfo="skip"
     ), row=1, col=1)
 
-    # 2. Lower Path Anchored to Floor at (t_first, 0) and (t_last, 0)
-    # Extends across entire horizontal window [v_start, v_end] along the floor,
-    # then climbs to the curve points, and drops back to the floor.
-    x_lower = [v_start, t_first, t_first] + list(df_plot_lines["timestamp"]) + [t_last, t_last, v_end]
-    y_lower = [0.0, 0.0, df_plot_lines["raffica_plot_y"].iloc[0]] + list(df_plot_lines["raffica_plot_y"]) + [df_plot_lines["raffica_plot_y"].iloc[-1], 0.0, 0.0]
+    # 2. Lower Mask Boundary: Traces floor -> first point -> curve -> last point -> floor
+    x_lower = [t_first, t_first] + list(df_plot_lines["timestamp"]) + [t_last, t_last]
+    y_lower = [0.0, df_plot_lines["raffica_plot_y"].iloc[0]] + list(df_plot_lines["raffica_plot_y"]) + [df_plot_lines["raffica_plot_y"].iloc[-1], 0.0]
 
     fig.add_trace(go.Scatter(
         x=x_lower,
@@ -451,11 +449,9 @@ if df_all is not None and not df_all.empty:
         showlegend=False
     ), row=1, col=1)
 
-    # 3. Upper Ceiling Line Mask (fill="tonexty")
-    # Fills from the ceiling down to y_lower. Because y_lower is 0.0 outside the curve,
-    # this completely blocks the background everywhere except strictly under the curve.
-    x_upper = [v_start, v_end]
-    y_upper = [ceiling_y, ceiling_y]
+    # 3. Upper Mask Boundary: Point-for-point match with x_lower, spanning from ceiling down to curve
+    x_upper = [t_first, t_first] + list(df_plot_lines["timestamp"]) + [t_last, t_last]
+    y_upper = [ceiling_y] * len(x_upper)
 
     fig.add_trace(go.Scatter(
         x=x_upper,
@@ -467,6 +463,29 @@ if df_all is not None and not df_all.empty:
         hoverinfo="skip",
         showlegend=False
     ), row=1, col=1)
+
+    # 4. Flank Cover (If viewport extends beyond data on left or right)
+    if v_start < t_first:
+        fig.add_trace(go.Scatter(
+            x=[v_start, t_first, t_first, v_start, v_start],
+            y=[0, 0, ceiling_y, ceiling_y, 0],
+            fill="toself",
+            fillcolor="#f8fafc",
+            line=dict(color="rgba(0,0,0,0)", width=0),
+            hoverinfo="skip",
+            showlegend=False
+        ), row=1, col=1)
+
+    if v_end > t_last:
+        fig.add_trace(go.Scatter(
+            x=[t_last, v_end, v_end, t_last, t_last],
+            y=[0, 0, ceiling_y, ceiling_y, 0],
+            fill="toself",
+            fillcolor="#f8fafc",
+            line=dict(color="rgba(0,0,0,0)", width=0),
+            hoverinfo="skip",
+            showlegend=False
+        ), row=1, col=1)
 
     # Subplot 1: Gust Trace
     fig.add_trace(go.Scatter(
