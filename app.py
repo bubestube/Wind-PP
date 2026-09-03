@@ -41,7 +41,7 @@ def deg_to_cardinal(deg):
     ix = int(round(deg / (360.0 / len(dirs)))) % len(dirs)
     return dirs[ix]
 
-# Continuous Beaufort Color Scale for Area Fill
+# Smooth Windguru Color Scale
 WIND_COLORSCALE_SMOOTH = [
     [0.00, "#f8fafc"],
     [0.12, "#e0f2fe"],
@@ -339,7 +339,6 @@ if df_all is not None and not df_all.empty:
 
     max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
     top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
-    ceiling_y = top_y_limit * 1.25
 
     # Dynamic Labels & Arrow Vectors
     speed_labels = [""] * len(df_plot_lines)
@@ -420,72 +419,38 @@ if df_all is not None and not df_all.empty:
     t_first = df_plot_lines["timestamp"].min()
     t_last = df_plot_lines["timestamp"].max()
 
-    # 1. Background Gradient Heatmap: ONLY spans strictly between first and last data points
-    y_levels = np.linspace(0, top_y_limit, 60)
+    # --- HIGH-RESOLUTION MESH HEATMAP (STRICTLY CLIPPED TO ACTIVE VIEWPORT) ---
+    num_x = 320
+    x_grid = pd.date_range(start=v_start, end=v_end, periods=num_x)
+    num_y = 60
+    y_levels = np.linspace(0, top_y_limit, num_y)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
-    z_gradient = np.tile(bft_levels, (2, 1)).T
+
+    # Interpolate gust curve onto x_grid for smooth curve clipping
+    df_temp_interp = df_plot_lines.set_index("timestamp")
+    # Reindex and interpolate
+    all_idx = df_temp_interp.index.union(x_grid)
+    df_interp = df_temp_interp.reindex(all_idx).interpolate(method="time").reindex(x_grid)
+    gust_y_grid = df_interp["raffica_plot_y"].to_numpy()
+
+    z_mesh = np.full((num_y, num_x), np.nan)
+    for c, t_val in enumerate(x_grid):
+        if t_first <= t_val <= t_last:
+            limit_y = gust_y_grid[c]
+            if not np.isnan(limit_y):
+                mask_col = y_levels <= limit_y
+                z_mesh[mask_col, c] = bft_levels[mask_col]
 
     fig.add_trace(go.Heatmap(
-        x=[t_first, t_last],
+        x=x_grid,
         y=y_levels,
-        z=z_gradient,
+        z=z_mesh,
         colorscale=WIND_COLORSCALE_SMOOTH,
         zmin=0,
         zmax=8,
         showscale=False,
         hoverinfo="skip"
     ), row=1, col=1)
-
-    # 2. Lower Mask Boundary: Traces floor -> first point -> curve -> last point -> floor
-    x_lower = [t_first, t_first] + list(df_plot_lines["timestamp"]) + [t_last, t_last]
-    y_lower = [0.0, df_plot_lines["raffica_plot_y"].iloc[0]] + list(df_plot_lines["raffica_plot_y"]) + [df_plot_lines["raffica_plot_y"].iloc[-1], 0.0]
-
-    fig.add_trace(go.Scatter(
-        x=x_lower,
-        y=y_lower,
-        mode="lines",
-        line=dict(color="rgba(0,0,0,0)", width=0),
-        hoverinfo="skip",
-        showlegend=False
-    ), row=1, col=1)
-
-    # 3. Upper Mask Boundary: Point-for-point match with x_lower, spanning from ceiling down to curve
-    x_upper = [t_first, t_first] + list(df_plot_lines["timestamp"]) + [t_last, t_last]
-    y_upper = [ceiling_y] * len(x_upper)
-
-    fig.add_trace(go.Scatter(
-        x=x_upper,
-        y=y_upper,
-        mode="lines",
-        fill="tonexty",
-        fillcolor="#f8fafc",
-        line=dict(color="rgba(0,0,0,0)", width=0),
-        hoverinfo="skip",
-        showlegend=False
-    ), row=1, col=1)
-
-    # 4. Flank Cover (If viewport extends beyond data on left or right)
-    if v_start < t_first:
-        fig.add_trace(go.Scatter(
-            x=[v_start, t_first, t_first, v_start, v_start],
-            y=[0, 0, ceiling_y, ceiling_y, 0],
-            fill="toself",
-            fillcolor="#f8fafc",
-            line=dict(color="rgba(0,0,0,0)", width=0),
-            hoverinfo="skip",
-            showlegend=False
-        ), row=1, col=1)
-
-    if v_end > t_last:
-        fig.add_trace(go.Scatter(
-            x=[t_last, v_end, v_end, t_last, t_last],
-            y=[0, 0, ceiling_y, ceiling_y, 0],
-            fill="toself",
-            fillcolor="#f8fafc",
-            line=dict(color="rgba(0,0,0,0)", width=0),
-            hoverinfo="skip",
-            showlegend=False
-        ), row=1, col=1)
 
     # Subplot 1: Gust Trace
     fig.add_trace(go.Scatter(
@@ -608,7 +573,7 @@ if df_all is not None and not df_all.empty:
             ax=-dx,
             ay=dy,
             axref="pixel",
-            ayref="pixel",
+            axref="pixel",
             showarrow=True,
             arrowhead=2,
             arrowsize=2,
@@ -777,7 +742,7 @@ if df_all is not None and not df_all.empty:
     with st.expander("📋 View Data Log (Active Window)"):
         st.dataframe(
             df_slice.sort_values("timestamp", ascending=False),
-            use_container_width=True
+            use_company_width=True if "use_company_width" in dir(st) else use_container_width=True # fallback just in case
         )
 else:
     st.info("No data file found yet.")
