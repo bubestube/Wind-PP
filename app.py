@@ -336,6 +336,7 @@ if df_all is not None and not df_all.empty:
 
     has_temp = "temperatura_c" in df_slice.columns and df_slice["temperatura_c"].notnull().any()
     df_plot_lines = df_slice.sort_values("timestamp").reset_index(drop=True)
+    df_plot_lines["raffica_plot_y"] = pd.to_numeric(df_plot_lines["raffica_plot_y"], errors="coerce")
 
     max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
     top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
@@ -419,18 +420,33 @@ if df_all is not None and not df_all.empty:
     t_first = df_plot_lines["timestamp"].min()
     t_last = df_plot_lines["timestamp"].max()
 
-    # --- TRUE CONTINUOUS 2D HORIZONTAL GRADIENT SURFACE (CLIPPED TO DATA BOUNDS) ---
-    y_levels = np.linspace(0, top_y_limit, 45)
+    # --- HIGH-RESOLUTION SMOOTH MESH HEATMAP (STRICTLY BETWEEN t_first & t_last) ---
+    num_x = 700
+    x_grid = pd.date_range(start=t_first, end=t_last, periods=num_x)
+    num_y = 180
+    y_levels = np.linspace(0, top_y_limit, num_y)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
-    z_gradient = np.tile(bft_levels, (2, 1)).T
+
+    df_temp_interp = df_plot_lines.set_index("timestamp")[["raffica_plot_y"]]
+    all_idx = df_temp_interp.index.union(x_grid)
+    df_interp = df_temp_interp.reindex(all_idx).interpolate(method="time").reindex(x_grid)
+    gust_y_grid = pd.to_numeric(df_interp["raffica_plot_y"], errors="coerce").to_numpy()
+
+    z_mesh = np.full((num_y, num_x), np.nan)
+    for c, t_val in enumerate(x_grid):
+        limit_y = gust_y_grid[c]
+        if not np.isnan(limit_y):
+            mask_col = y_levels <= limit_y
+            z_mesh[mask_col, c] = bft_levels[mask_col]
 
     fig.add_trace(go.Heatmap(
-        x=[t_first, t_last],
+        x=x_grid,
         y=y_levels,
-        z=z_gradient,
+        z=z_mesh,
         colorscale=WIND_COLORSCALE_SMOOTH,
         zmin=0,
         zmax=8,
+        zsmooth='best',
         showscale=False,
         hoverinfo="skip"
     ), row=1, col=1)
@@ -451,7 +467,7 @@ if df_all is not None and not df_all.empty:
         showlegend=False
     ), row=1, col=1)
 
-    # --- FLANK BLOCKERS: COVER ANY VIEWPORT MARGIN OUTSIDE DATA ---
+    # --- FLANK BLOCKERS: COVER VIEWPORT MARGINS OUTSIDE DATA BOUNDS ---
     ceiling_y = top_y_limit * 1.25
     if v_start < t_first:
         fig.add_trace(go.Scatter(
@@ -507,7 +523,7 @@ if df_all is not None and not df_all.empty:
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
-    # Subplot 1: Exact Angulation Stemmed Vector Arrows
+    # Stemmed mini vector arrows
     mini_arrow_len = 18
     for pt in labeled_speed_points:
         deg = pt["direzione_deg"]
@@ -548,7 +564,7 @@ if df_all is not None and not df_all.empty:
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=2, col=1)
 
-    # Subplot 2: Direction Arrows Throttled to Match Horizon
+    # Subplot 2: Direction Arrows
     df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
@@ -618,7 +634,7 @@ if df_all is not None and not df_all.empty:
             name="Temp (Day: 06-19h)",
             connectgaps=False,
             line=dict(color="#eab308", width=1.8 if span_h >= 720 else 2.2),
-            marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#eab308", line=dict(color="#ca8a04", width=1)),
+            marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#eab308"),
             hovertemplate="<b>Temp (Day):</b> %{y:.1f} °C<extra></extra>"
         ), row=3, col=1)
 
@@ -630,7 +646,7 @@ if df_all is not None and not df_all.empty:
                 name="Temp (Night: 19-06h)",
                 connectgaps=False,
                 line=dict(color="#1e3a8a", width=1.8 if span_h >= 720 else 2.2),
-                marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#1e3a8a", line=dict(color="#0f172a", width=1)),
+                marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#1e3a8a"),
                 hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
             ), row=3, col=1)
 
