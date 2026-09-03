@@ -229,17 +229,17 @@ if df_raw is not None and not df_raw.empty:
 
     span_h = st.session_state.window_span_hours
 
-    # --- Tiered Density Reduction Rules ---
-    if span_h >= 720:          # 30 Days: 2-hour buckets
+    # Adaptive density thresholds
+    if span_h >= 720:          # 30 Days
         resample_rule = "2h"
         slider_step_delta = datetime.timedelta(hours=2)
-    elif span_h >= 168:        # 7 Days: 30-minute buckets
+    elif span_h >= 168:        # 7 Days
         resample_rule = "30min"
         slider_step_delta = datetime.timedelta(minutes=30)
-    elif span_h >= 72:         # 3 Days: 20-minute buckets
+    elif span_h >= 72:         # 3 Days
         resample_rule = "20min"
         slider_step_delta = datetime.timedelta(minutes=20)
-    else:                      # <= 1 Day: Raw native resolution
+    else:                      # <= 1 Day
         resample_rule = None
         slider_step_delta = datetime.timedelta(minutes=15)
 
@@ -274,7 +274,6 @@ if df_raw is not None and not df_raw.empty:
             st.session_state.window_end_time = max_allowable_end
             st.rerun()
 
-    # Active Month Badge
     cur_end = pd.to_datetime(st.session_state.window_end_time)
     cur_start = cur_end - pd.Timedelta(hours=span_h)
     month_str = cur_end.strftime("%B %Y") if cur_start.strftime("%B %Y") == cur_end.strftime("%B %Y") else f"{cur_start.strftime('%B')} – {cur_end.strftime('%B %Y')}"
@@ -299,7 +298,7 @@ if df_raw is not None and not df_raw.empty:
     v_end = pd.to_datetime(st.session_state.window_end_time)
     v_start = v_end - pd.Timedelta(hours=span_h)
 
-    # Slice only the active window + 2h margin to keep resampling fast
+    # Slice strictly across active window with a 2h safety buffer
     buffer = pd.Timedelta(hours=2)
     df_slice = df_raw[(df_raw["timestamp"] >= v_start - buffer) & (df_raw["timestamp"] <= v_end + buffer)].copy()
 
@@ -309,7 +308,6 @@ if df_raw is not None and not df_raw.empty:
     if df_slice.empty:
         df_slice = df_raw.tail(40).copy()
 
-    # Apply tiered resampling
     if resample_rule is not None and not df_slice.empty:
         df_agg = df_slice.set_index("timestamp").resample(resample_rule).agg({
             "velocita_knots": "mean",
@@ -333,7 +331,6 @@ if df_raw is not None and not df_raw.empty:
     max_observed_y = df_chart["raffica_plot_y"].dropna().max() if not df_chart["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
     top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.15)
 
-    # Adaptive Text Labels & Mini Stemmed Vectors (Subplot 1)
     speed_labels = [""] * len(df_chart)
     gust_labels = [""] * len(df_chart)
     labeled_speed_points = []
@@ -364,21 +361,13 @@ if df_raw is not None and not df_raw.empty:
         t_arr = df_chart["timestamp"].to_numpy()
 
         if span_h >= 720:
-            min_pts_step = 10
-            max_pts_step = 30
-            delta_threshold = 4.0
+            min_pts_step, max_pts_step, delta_threshold = 10, 30, 4.0
         elif span_h >= 168:
-            min_pts_step = 6
-            max_pts_step = 20
-            delta_threshold = 2.5
+            min_pts_step, max_pts_step, delta_threshold = 6, 20, 2.5
         elif span_h >= 72:
-            min_pts_step = 4
-            max_pts_step = 14
-            delta_threshold = 2.0
+            min_pts_step, max_pts_step, delta_threshold = 4, 14, 2.0
         else:
-            min_pts_step = 2
-            max_pts_step = 8
-            delta_threshold = 1.0
+            min_pts_step, max_pts_step, delta_threshold = 2, 8, 1.0
 
         for idx in valid_indices[1:]:
             curr_v, curr_d, curr_g = v_arr[idx], d_arr[idx], r_arr[idx]
@@ -404,7 +393,6 @@ if df_raw is not None and not df_raw.empty:
     df_chart["speed_label"] = speed_labels
     df_chart["gust_label"] = gust_labels
 
-    # 4. Multi-Panel Subplots
     fig = make_subplots(
         rows=3 if has_temp else 2,
         cols=1,
@@ -418,13 +406,13 @@ if df_raw is not None and not df_raw.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # Continuous 2D Background Gradient Surface
+    # Gradient Surface matches axis boundaries
     y_levels = np.linspace(0, top_y_limit, 45)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
     z_gradient = np.tile(bft_levels, (2, 1)).T
 
     fig.add_trace(go.Heatmap(
-        x=[v_start, v_end],
+        x=[v_start - buffer, v_end + buffer],
         y=y_levels,
         z=z_gradient,
         colorscale=WIND_COLORSCALE_SMOOTH,
@@ -434,11 +422,23 @@ if df_raw is not None and not df_raw.empty:
         hoverinfo="skip"
     ), row=1, col=1)
 
-    # Inverted White Ceiling Mask
-    x_mask = [v_start] + list(df_chart["timestamp"]) + [v_end, v_end, v_start]
-    y_mask = [df_chart["raffica_plot_y"].iloc[0]] + list(df_chart["raffica_plot_y"]) + [
-        df_chart["raffica_plot_y"].iloc[-1], top_y_limit * 1.10, top_y_limit * 1.10
-    ]
+    # Exact Inverted Frame Mask: Seals the sides, bottom corners, and everything above the curve
+    t_min_data = df_chart["timestamp"].min()
+    t_max_data = df_chart["timestamp"].max()
+    ceiling_y = top_y_limit * 1.15
+    bound_left = min(v_start - buffer, t_min_data)
+    bound_right = max(v_end + buffer, t_max_data)
+
+    x_mask = (
+        [bound_left, bound_left, t_min_data] +
+        list(df_chart["timestamp"]) +
+        [t_max_data, bound_right, bound_right, bound_left]
+    )
+    y_mask = (
+        [ceiling_y, 0.0, 0.0] +
+        list(df_chart["raffica_plot_y"]) +
+        [0.0, 0.0, ceiling_y, ceiling_y]
+    )
 
     fig.add_trace(go.Scatter(
         x=x_mask,
