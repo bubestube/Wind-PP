@@ -288,7 +288,6 @@ if df_all is not None and not df_all.empty:
         unsafe_allow_html=True
     )
 
-    # Windguru Slider with Clean Weekday, Date & Time Formatter
     if min_slider < max_slider:
         timeline_ticks = pd.date_range(start=min_slider, end=max_slider, freq=slider_freq).to_pydatetime().tolist()
         if not timeline_ticks or timeline_ticks[-1] != max_slider:
@@ -417,13 +416,16 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # --- TRUE CONTINUOUS 2D HORIZONTAL GRADIENT SURFACE ---
+    t_first = df_plot_lines["timestamp"].min()
+    t_last = df_plot_lines["timestamp"].max()
+
+    # --- TRUE CONTINUOUS 2D HORIZONTAL GRADIENT SURFACE (CLIPPED TO DATA BOUNDS) ---
     y_levels = np.linspace(0, top_y_limit, 45)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
     z_gradient = np.tile(bft_levels, (2, 1)).T
 
     fig.add_trace(go.Heatmap(
-        x=[v_start, v_end],
+        x=[t_first, t_last],
         y=y_levels,
         z=z_gradient,
         colorscale=WIND_COLORSCALE_SMOOTH,
@@ -434,7 +436,7 @@ if df_all is not None and not df_all.empty:
     ), row=1, col=1)
 
     # --- INVERTED MASK: BLOCKS OUT EVERYTHING ABOVE GUST LINE ---
-    x_mask = [v_start] + list(df_plot_lines["timestamp"]) + [v_end, v_end, v_start]
+    x_mask = [t_first] + list(df_plot_lines["timestamp"]) + [t_last, t_last, t_first]
     y_mask = [df_plot_lines["raffica_plot_y"].iloc[0]] + list(df_plot_lines["raffica_plot_y"]) + [
         df_plot_lines["raffica_plot_y"].iloc[-1], top_y_limit * 1.05, top_y_limit * 1.05
     ]
@@ -448,6 +450,30 @@ if df_all is not None and not df_all.empty:
         hoverinfo="skip",
         showlegend=False
     ), row=1, col=1)
+
+    # --- FLANK BLOCKERS: COVER ANY VIEWPORT MARGIN OUTSIDE DATA ---
+    ceiling_y = top_y_limit * 1.25
+    if v_start < t_first:
+        fig.add_trace(go.Scatter(
+            x=[v_start, t_first, t_first, v_start, v_start],
+            y=[0, 0, ceiling_y, ceiling_y, 0],
+            fill="toself",
+            fillcolor="#ffffff",
+            line=dict(color="rgba(0,0,0,0)", width=0),
+            hoverinfo="skip",
+            showlegend=False
+        ), row=1, col=1)
+
+    if v_end > t_last:
+        fig.add_trace(go.Scatter(
+            x=[t_last, v_end, v_end, t_last, t_last],
+            y=[0, 0, ceiling_y, ceiling_y, 0],
+            fill="toself",
+            fillcolor="#ffffff",
+            line=dict(color="rgba(0,0,0,0)", width=0),
+            hoverinfo="skip",
+            showlegend=False
+        ), row=1, col=1)
 
     # Subplot 1: Gust Trace
     fig.add_trace(go.Scatter(
@@ -481,7 +507,7 @@ if df_all is not None and not df_all.empty:
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
-    # Stemmed mini vector arrows
+    # Subplot 1: Exact Angulation Stemmed Vector Arrows
     mini_arrow_len = 18
     for pt in labeled_speed_points:
         deg = pt["direzione_deg"]
@@ -522,7 +548,7 @@ if df_all is not None and not df_all.empty:
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=2, col=1)
 
-    # Subplot 2: Direction Arrows
+    # Subplot 2: Direction Arrows Throttled to Match Horizon
     df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
@@ -592,7 +618,7 @@ if df_all is not None and not df_all.empty:
             name="Temp (Day: 06-19h)",
             connectgaps=False,
             line=dict(color="#eab308", width=1.8 if span_h >= 720 else 2.2),
-            marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#eab308"),
+            marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#eab308", line=dict(color="#ca8a04", width=1)),
             hovertemplate="<b>Temp (Day):</b> %{y:.1f} °C<extra></extra>"
         ), row=3, col=1)
 
@@ -604,7 +630,7 @@ if df_all is not None and not df_all.empty:
                 name="Temp (Night: 19-06h)",
                 connectgaps=False,
                 line=dict(color="#1e3a8a", width=1.8 if span_h >= 720 else 2.2),
-                marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#1e3a8a"),
+                marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#1e3a8a", line=dict(color="#0f172a", width=1)),
                 hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
             ), row=3, col=1)
 
