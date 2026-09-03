@@ -195,16 +195,14 @@ if df_all is not None and not df_all.empty:
     bar_col1, bar_col2 = st.columns([4, 1])
     with bar_col1:
         st.markdown(
-            '<div class="scroll-hint">🖱️ <b>Interactive Canvas:</b> Click & drag horizontally to pan backwards in time. Use mouse-wheel or trackpad pinch to zoom in/out. Drag the minimap handles below to scroll.</div>',
+            '<div class="scroll-hint">🖱️ <b>Infinite Canvas:</b> Drag horizontally to pan backwards in time. Scroll / pinch to zoom. Use the minimap slider below for global scrubbing.</div>',
             unsafe_allow_html=True
         )
     with bar_col2:
         if st.button("🔴 Reset to Live"):
-            st.session_state["chart_viewport"] = None
             st.rerun()
 
-    # Pre-process Full Dataset Efficiently
-    # For large datasets, downsample to 10-minute bins for instant 60fps pan/zoom
+    # Pre-process Continuous Dataset (10-minute uniform grid)
     df_chart = df_all.set_index("timestamp").resample("10min").agg({
         "velocita_knots": "mean",
         "raffica_knots": "max",
@@ -217,11 +215,26 @@ if df_all is not None and not df_all.empty:
     df_chart["raffica_bft"] = knots_to_bft(df_chart["raffica_knots"])
     df_chart["velocita_plot_y"] = bft_to_stretched(df_chart["velocita_bft"])
     df_chart["raffica_plot_y"] = bft_to_stretched(df_chart["raffica_bft"])
+    # Plotly's symbol="arrow-up" points North (0°). Rotating by arrow_angle points to wind direction:
     df_chart["arrow_angle"] = (df_chart["direzione_deg"].fillna(0) + 180) % 360
+
+    # Dynamic Cadence for Windspeed Text Labels & Direction Arrow Glyphs
+    # Step every 3rd point (every 30 mins) to maintain clean readability
+    speed_labels = []
+    gust_labels = []
+    for i, row in df_chart.iterrows():
+        if i % 3 == 0:
+            speed_labels.append(f"{row['velocita_knots']:.1f}")
+            gust_labels.append(f"{row['raffica_knots']:.1f}")
+        else:
+            speed_labels.append("")
+            gust_labels.append("")
+    df_chart["speed_label"] = speed_labels
+    df_chart["gust_label"] = gust_labels
 
     has_temp = "temperatura_c" in df_chart.columns and df_chart["temperatura_c"].notnull().any()
     max_observed_y = df_chart["raffica_plot_y"].dropna().max() if not df_chart["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
-    top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
+    top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.15)
 
     # Initial default view: Last 24 Hours
     default_start = t_global_max - pd.Timedelta(hours=24)
@@ -233,8 +246,8 @@ if df_all is not None and not df_all.empty:
         shared_xaxes=True,
         vertical_spacing=0.03,
         subplot_titles=(
-            "<b>Wind speed and gusts (Stretched Beaufort Scale) – Drag to Pan / Scroll to Zoom</b>",
-            "<b>Wind direction</b>",
+            "<b>Wind speed and gusts (Stretched Beaufort Scale) – Pan & Zoom Enabled</b>",
+            "<b>Wind direction & Vectors</b>",
             "<b>Temperature (°C)</b>" if has_temp else None
         ),
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
@@ -259,7 +272,7 @@ if df_all is not None and not df_all.empty:
     # 2. Inverted White Ceiling Mask
     x_mask = [t_global_min] + list(df_chart["timestamp"]) + [t_global_max, t_global_max, t_global_min]
     y_mask = [df_chart["raffica_plot_y"].iloc[0]] + list(df_chart["raffica_plot_y"]) + [
-        df_chart["raffica_plot_y"].iloc[-1], top_y_limit * 1.08, top_y_limit * 1.08
+        df_chart["raffica_plot_y"].iloc[-1], top_y_limit * 1.10, top_y_limit * 1.10
     ]
 
     fig.add_trace(go.Scatter(
@@ -272,35 +285,56 @@ if df_all is not None and not df_all.empty:
         showlegend=False
     ), row=1, col=1)
 
-    # 3. Gust Trace
+    # 3. Gust Trace (Lines + Markers + Labels Above)
     fig.add_trace(go.Scatter(
         x=df_chart["timestamp"],
         y=df_chart["raffica_plot_y"],
+        text=df_chart["gust_label"],
+        textposition="top center",
+        textfont=dict(family="Arial, sans-serif", size=10, color="#b91c1c"),
         customdata=np.stack((df_chart["raffica_bft"], df_chart["raffica_knots"]), axis=-1),
-        mode="lines",
+        mode="lines+markers+text",
         name="Gust (Raffica)",
         line=dict(color="#0f172a", width=1.5, dash="dot"),
+        marker=dict(symbol="circle", size=3.5, color="#0f172a"),
         hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=1, col=1)
 
-    # 4. Sustained Speed Trace
+    # 4. Sustained Speed Trace (Lines + Arrow Glyphs + Knots Labels Underneath)
     fig.add_trace(go.Scatter(
         x=df_chart["timestamp"],
         y=df_chart["velocita_plot_y"],
+        text=df_chart["speed_label"],
+        textposition="bottom center",
+        textfont=dict(family="Arial, sans-serif", size=10, color="#0f172a"),
         customdata=np.stack((df_chart["velocita_bft"], df_chart["velocita_knots"], df_chart["direzione_deg"]), axis=-1),
-        mode="lines",
+        mode="lines+markers+text",
         name="Wind Speed (Avg)",
         line=dict(color="#0f172a", width=2.0),
+        marker=dict(
+            symbol="arrow-up",
+            size=10,
+            angle=df_chart["arrow_angle"],
+            color="#0f172a"
+        ),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
-    # 5. Direction Markers
+    # 5. Direction Subplot (Arrow Vector Glyphs Colored by Force)
+    # Green if >= 18 knots, Red/Grey otherwise
+    arrow_colors = np.where(df_chart["velocita_knots"] >= 18.0, "#16a34a", "#dc2626")
+
     fig.add_trace(go.Scatter(
         x=df_chart["timestamp"],
         y=df_chart["direzione_deg"],
         mode="markers",
-        name="Direction",
-        marker=dict(symbol="circle", size=3, color="#64748b"),
+        name="Direction Arrow",
+        marker=dict(
+            symbol="arrow-up",
+            size=13,
+            angle=df_chart["arrow_angle"],
+            color=arrow_colors
+        ),
         customdata=df_chart[["direzione_cardinal", "velocita_knots", "velocita_bft"]],
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=2, col=1)
@@ -310,8 +344,9 @@ if df_all is not None and not df_all.empty:
         fig.add_trace(go.Scatter(
             x=df_chart["timestamp"],
             y=df_chart["temperatura_c"],
-            mode="lines",
+            mode="lines+markers",
             name="Temperature",
+            marker=dict(size=3, color="#ca8a04"),
             line=dict(color="#eab308", width=1.8),
             hovertemplate="<b>Temp:</b> %{y:.1f} °C<extra></extra>"
         ), row=3, col=1)
@@ -334,7 +369,7 @@ if df_all is not None and not df_all.empty:
         title_text="<b>Direction</b>",
         range=[-35, 395],
         tickvals=[0, 90, 180, 270, 360],
-        ticktext=["N", "E", "S", "W", "N"],
+        ticktext=["N (0°)", "E (90°)", "S (180°)", "W (270°)", "N (360°)"],
         fixedrange=True,
         row=2, col=1
     )
@@ -359,7 +394,7 @@ if df_all is not None and not df_all.empty:
         height=820 if has_temp else 650,
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
-        dragmode="pan",  # Default click-and-drag behavior is horizontal panning
+        dragmode="pan",
         hovermode="x unified",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         margin=dict(l=35, r=20, t=50, b=30)
@@ -369,8 +404,16 @@ if df_all is not None and not df_all.empty:
         fig,
         use_container_width=True,
         config={
-            "scrollZoom": True,  # Enables mousewheel/trackpad zooming
+            "scrollZoom": True,
             "displayModeBar": True,
             "modeBarButtonsToRemove": ["lasso2d", "select2d"]
         }
     )
+
+    with st.expander("📋 View Data Log (Active Window)"):
+        st.dataframe(
+            df_chart.sort_values("timestamp", ascending=False),
+            use_container_width=True
+        )
+else:
+    st.info("No data file found yet.")
