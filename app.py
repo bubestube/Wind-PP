@@ -161,7 +161,6 @@ if df_raw is not None and not df_raw.empty:
     t_global_max = df_raw["timestamp"].max()
     t_global_min = df_raw["timestamp"].min()
 
-    # Top KPI Badges
     speed_bg, speed_fg = get_wg_badge(latest['velocita_knots'])
     gust_bg, gust_fg = get_wg_badge(latest['raffica_knots'])
     temp_val = latest.get("temperatura_c")
@@ -298,7 +297,7 @@ if df_raw is not None and not df_raw.empty:
     v_end = pd.to_datetime(st.session_state.window_end_time)
     v_start = v_end - pd.Timedelta(hours=span_h)
 
-    # Slice strictly across active window with a 2h safety buffer
+    # Slice strictly across active window with safety buffer
     buffer = pd.Timedelta(hours=2)
     df_slice = df_raw[(df_raw["timestamp"] >= v_start - buffer) & (df_raw["timestamp"] <= v_end + buffer)].copy()
 
@@ -330,7 +329,9 @@ if df_raw is not None and not df_raw.empty:
     has_temp = "temperatura_c" in df_chart.columns and df_chart["temperatura_c"].notnull().any()
     max_observed_y = df_chart["raffica_plot_y"].dropna().max() if not df_chart["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
     top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.15)
+    ceiling_y = top_y_limit * 1.25
 
+    # Adaptive Text Labels & Vector Arrow Points
     speed_labels = [""] * len(df_chart)
     gust_labels = [""] * len(df_chart)
     labeled_speed_points = []
@@ -406,13 +407,18 @@ if df_raw is not None and not df_raw.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # Gradient Surface matches axis boundaries
+    t_first = df_chart["timestamp"].min()
+    t_last = df_chart["timestamp"].max()
+    bound_left = min(v_start - buffer, t_first)
+    bound_right = max(v_end + buffer, t_last)
+
+    # 1. 2D Continuous Background Gradient Surface
     y_levels = np.linspace(0, top_y_limit, 45)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
     z_gradient = np.tile(bft_levels, (2, 1)).T
 
     fig.add_trace(go.Heatmap(
-        x=[v_start - buffer, v_end + buffer],
+        x=[bound_left, bound_right],
         y=y_levels,
         z=z_gradient,
         colorscale=WIND_COLORSCALE_SMOOTH,
@@ -422,28 +428,48 @@ if df_raw is not None and not df_raw.empty:
         hoverinfo="skip"
     ), row=1, col=1)
 
-    # Exact Inverted Frame Mask: Seals the sides, bottom corners, and everything above the curve
-    t_min_data = df_chart["timestamp"].min()
-    t_max_data = df_chart["timestamp"].max()
-    ceiling_y = top_y_limit * 1.15
-    bound_left = min(v_start - buffer, t_min_data)
-    bound_right = max(v_end + buffer, t_max_data)
+    # 2. SEPARATE SOLID WHITE MASKS (Completely prevents all leaks at ends & ceiling)
+    # Mask A: Left flank block (if chart bounds extend before first data point)
+    if bound_left < t_first:
+        fig.add_trace(go.Scatter(
+            x=[bound_left, t_first, t_first, bound_left, bound_left],
+            y=[0, 0, ceiling_y, ceiling_y, 0],
+            fill="toself",
+            fillcolor="#ffffff",
+            line=dict(color="rgba(255, 255, 255, 0)", width=0),
+            hoverinfo="skip",
+            showlegend=False
+        ), row=1, col=1)
 
-    x_mask = (
-        [bound_left, bound_left, t_min_data] +
-        list(df_chart["timestamp"]) +
-        [t_max_data, bound_right, bound_right, bound_left]
-    )
-    y_mask = (
-        [ceiling_y, 0.0, 0.0] +
-        list(df_chart["raffica_plot_y"]) +
-        [0.0, 0.0, ceiling_y, ceiling_y]
-    )
+    # Mask B: Right flank block (if chart bounds extend beyond last data point)
+    if bound_right > t_last:
+        fig.add_trace(go.Scatter(
+            x=[t_last, bound_right, bound_right, t_last, t_last],
+            y=[0, 0, ceiling_y, ceiling_y, 0],
+            fill="toself",
+            fillcolor="#ffffff",
+            line=dict(color="rgba(255, 255, 255, 0)", width=0),
+            hoverinfo="skip",
+            showlegend=False
+        ), row=1, col=1)
 
+    # Mask C: Curve Ceiling Mask using tonexty (Guaranteed 100% opaque cover above gust curve)
+    # Invisible lower anchor along the exact gust curve
     fig.add_trace(go.Scatter(
-        x=x_mask,
-        y=y_mask,
-        fill="toself",
+        x=df_chart["timestamp"],
+        y=df_chart["raffica_plot_y"],
+        mode="lines",
+        line=dict(color="rgba(255, 255, 255, 0)", width=0),
+        hoverinfo="skip",
+        showlegend=False
+    ), row=1, col=1)
+
+    # Opaque white fill from the gust curve up to the ceiling
+    fig.add_trace(go.Scatter(
+        x=df_chart["timestamp"],
+        y=[ceiling_y] * len(df_chart),
+        mode="lines",
+        fill="tonexty",
         fillcolor="#ffffff",
         line=dict(color="rgba(255, 255, 255, 0)", width=0),
         hoverinfo="skip",
@@ -676,7 +702,6 @@ if df_raw is not None and not df_raw.empty:
         config={
             "scrollZoom": True,
             "displayModeBar": True,
-            "displaylogo": False,
             "modeBarButtonsToRemove": ["lasso2d", "select2d"]
         }
     )
