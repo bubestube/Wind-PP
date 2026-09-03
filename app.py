@@ -3,6 +3,7 @@ import math
 import os
 import numpy as np
 import pandas as pd
+from scipy.ndimage import gaussian_filter
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
@@ -420,10 +421,10 @@ if df_all is not None and not df_all.empty:
     t_first = df_plot_lines["timestamp"].min()
     t_last = df_plot_lines["timestamp"].max()
 
-    # --- HIGH-RESOLUTION SMOOTH MESH HEATMAP (STRICTLY BETWEEN t_first & t_last) ---
-    num_x = 700
+    # --- MAXIMUM-RESOLUTION 2D MESH WITH GAUSSIAN BLUR SMOOTHING ---
+    num_x = 900
     x_grid = pd.date_range(start=t_first, end=t_last, periods=num_x)
-    num_y = 180
+    num_y = 200
     y_levels = np.linspace(0, top_y_limit, num_y)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
 
@@ -439,10 +440,16 @@ if df_all is not None and not df_all.empty:
             mask_col = y_levels <= limit_y
             z_mesh[mask_col, c] = bft_levels[mask_col]
 
+    # Apply 2D Gaussian filter to blend adjacent cells and eliminate all stair-stepping
+    valid_mask = ~np.isnan(z_mesh)
+    z_filled = np.where(valid_mask, z_mesh, 0)
+    z_smoothed = gaussian_filter(z_filled, sigma=1.2)
+    z_mesh_final = np.where(valid_mask, z_smoothed, np.nan)
+
     fig.add_trace(go.Heatmap(
         x=x_grid,
         y=y_levels,
-        z=z_mesh,
+        z=z_mesh_final,
         colorscale=WIND_COLORSCALE_SMOOTH,
         zmin=0,
         zmax=8,
@@ -644,7 +651,7 @@ if df_all is not None and not df_all.empty:
                 y=temp_night,
                 mode="lines+markers",
                 name="Temp (Night: 19-06h)",
-                connectgaps=False,
+                connectg_aps=False,
                 line=dict(color="#1e3a8a", width=1.8 if span_h >= 720 else 2.2),
                 marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#1e3a8a"),
                 hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
