@@ -41,15 +41,24 @@ def deg_to_cardinal(deg):
     ix = int(round(deg / (360.0 / len(dirs)))) % len(dirs)
     return dirs[ix]
 
-WIND_COLORSCALE_SMOOTH = [
-    [0.00, "#ffffff"],
-    [0.12, "#e0f2fe"],
-    [0.25, "#7dd3fc"],
-    [0.40, "#38bdf8"],
-    [0.55, "#4ade80"],
-    [0.70, "#facc15"],
-    [0.85, "#c084fc"],
-    [1.00, "#f87171"]
+WIND_COLORSCALE_GUST = [
+    [0.00, "rgba(255, 255, 255, 0.25)"],
+    [0.22, "rgba(56, 189, 248, 0.35)"],
+    [0.40, "rgba(37, 99, 235, 0.45)"],
+    [0.55, "rgba(34, 197, 94, 0.50)"],
+    [0.70, "rgba(234, 179, 8, 0.55)"],
+    [0.85, "rgba(168, 85, 247, 0.60)"],
+    [1.00, "rgba(239, 68, 68, 0.65)"]
+]
+
+WIND_COLORSCALE_SPEED = [
+    [0.00, "rgba(255, 255, 255, 0.50)"],
+    [0.22, "rgba(56, 189, 248, 0.55)"],
+    [0.40, "rgba(37, 99, 235, 0.65)"],
+    [0.55, "rgba(34, 197, 94, 0.70)"],
+    [0.70, "rgba(234, 179, 8, 0.75)"],
+    [0.85, "rgba(168, 85, 247, 0.80)"],
+    [1.00, "rgba(239, 68, 68, 0.85)"]
 ]
 
 def get_wg_badge(val):
@@ -127,11 +136,12 @@ st.markdown("""
         background-color: #ffffff;
         border: 1px solid #cbd5e1;
         border-radius: 20px;
-        padding: 4px 12px;
-        font-size: 0.88rem;
+        padding: 4px 14px;
+        font-size: 0.90rem;
         font-weight: 600;
         color: #0f172a;
-        margin-bottom: 4px;
+        margin-bottom: 6px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
     }
     </style>
 """, unsafe_allow_html=True)
@@ -161,6 +171,7 @@ if df_raw is not None and not df_raw.empty:
     t_global_max = df_raw["timestamp"].max()
     t_global_min = df_raw["timestamp"].min()
 
+    # Top KPI Cards
     speed_bg, speed_fg = get_wg_badge(latest['velocita_knots'])
     gust_bg, gust_fg = get_wg_badge(latest['raffica_knots'])
     temp_val = latest.get("temperatura_c")
@@ -204,19 +215,18 @@ if df_raw is not None and not df_raw.empty:
 
     st.write("")
 
-    # Viewport State
+    # Viewport State Initialization
     if "window_end_time" not in st.session_state:
         st.session_state.window_end_time = t_global_max.to_pydatetime()
     if "window_span_hours" not in st.session_state:
-        st.session_state.window_span_hours = 6
+        st.session_state.window_span_hours = 24
 
-    # Clamping state so it never exceeds live data
     if st.session_state.window_end_time > t_global_max.to_pydatetime():
         st.session_state.window_end_time = t_global_max.to_pydatetime()
 
     window_options = [6, 12, 24, 72, 168, 720]
-    curr_span = st.session_state.get("window_span_hours", 6)
-    curr_idx = window_options.index(curr_span) if curr_span in window_options else 0
+    curr_span = st.session_state.get("window_span_hours", 24)
+    curr_idx = window_options.index(curr_span) if curr_span in window_options else 2
 
     ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns([1, 1, 1.3, 1.2, 1, 1])
     with ctrl_col3:
@@ -232,19 +242,19 @@ if df_raw is not None and not df_raw.empty:
 
     span_h = st.session_state.window_span_hours
 
-    # Adaptive density thresholds
+    # Density thresholds & slider resolution
     if span_h >= 720:          # 30 Days
         resample_rule = "2h"
-        slider_step_delta = datetime.timedelta(hours=2)
+        slider_freq = "2h"
     elif span_h >= 168:        # 7 Days
         resample_rule = "30min"
-        slider_step_delta = datetime.timedelta(minutes=30)
+        slider_freq = "30min"
     elif span_h >= 72:         # 3 Days
         resample_rule = "20min"
-        slider_step_delta = datetime.timedelta(minutes=20)
+        slider_freq = "20min"
     else:                      # <= 1 Day
         resample_rule = None
-        slider_step_delta = datetime.timedelta(minutes=15)
+        slider_freq = "15min"
 
     min_allowable_end = (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime()
     max_allowable_end = t_global_max.to_pydatetime()
@@ -277,32 +287,44 @@ if df_raw is not None and not df_raw.empty:
             st.session_state.window_end_time = max_allowable_end
             st.rerun()
 
-    # Hard ceiling clamp: window_end can never exceed t_global_max
+    # Fixed end point bounded strictly to max data point
     v_end = min(pd.to_datetime(st.session_state.window_end_time), t_global_max)
     v_start = v_end - pd.Timedelta(hours=span_h)
 
-    month_str = v_end.strftime("%B %Y") if v_start.strftime("%B %Y") == v_end.strftime("%B %Y") else f"{v_start.strftime('%B')} – {v_end.strftime('%B %Y')}"
+    # Windguru Active Timeline Header
+    date_display_str = f"{v_start.strftime('%a %d.%m. %H:%M')} ➔ {v_end.strftime('%a %d.%m. %H:%M')}"
     st.markdown(
-        f'<div class="slider-month-pill">📅 <span>{month_str}</span> (Step & Bucket: {resample_rule if resample_rule else "Native ~3m"})</div>',
+        f'<div class="slider-month-pill">📅 <span><b>{date_display_str}</b></span> ({span_h}h window)</div>',
         unsafe_allow_html=True
     )
 
-    if min_allowable_end < max_allowable_end:
-        scrub_pos = st.slider(
-            "Scroll Active Timeline Window:",
-            min_value=min_allowable_end,
-            max_value=max_allowable_end,
-            value=min(max_allowable_end, max(min_allowable_end, v_end.to_pydatetime())),
-            format="DD.MM HH:mm",
-            step=slider_step_delta
-        )
-        if scrub_pos != st.session_state.window_end_time:
-            st.session_state.window_end_time = min(scrub_pos, max_allowable_end)
-            st.rerun()
+    # --- Windguru Date & Time Slider ---
+    # Construct a complete sequence of dates and hours to scrub through
+    timeline_ticks = pd.date_range(start=min_allowable_end, end=max_allowable_end, freq=slider_freq).to_pydatetime().tolist()
+    if not timeline_ticks or timeline_ticks[-1] != max_allowable_end:
+        timeline_ticks.append(max_allowable_end)
 
-    # Buffer only extends into the past; right end is strictly bounded by t_global_max
-    left_buffer = pd.Timedelta(hours=2)
-    df_slice = df_raw[(df_raw["timestamp"] >= v_start - left_buffer) & (df_raw["timestamp"] <= v_end)].copy()
+    # Find closest tick to current state
+    curr_target = min(v_end.to_pydatetime(), max_allowable_end)
+    closest_idx = int(np.argmin([abs((t - curr_target).total_seconds()) for t in timeline_ticks]))
+
+    def format_windguru_slider(tick_dt):
+        return tick_dt.strftime("%a %d.%m. %H:%M")
+
+    selected_slider_idx = st.select_slider(
+        "Timeline Scrubber (Day, Date & Time):",
+        options=range(len(timeline_ticks)),
+        value=closest_idx,
+        format_func=lambda idx: format_windguru_slider(timeline_ticks[idx])
+    )
+
+    chosen_dt = timeline_ticks[selected_slider_idx]
+    if abs((chosen_dt - v_end.to_pydatetime()).total_seconds()) > 60:
+        st.session_state.window_end_time = chosen_dt
+        st.rerun()
+
+    # Slice only within data boundaries (Zero future overshoot)
+    df_slice = df_raw[(df_raw["timestamp"] >= v_start) & (df_raw["timestamp"] <= v_end)].copy()
 
     if daytime_only:
         df_slice = df_slice[df_slice["timestamp"].dt.hour.between(6, 18)].copy()
@@ -331,389 +353,4 @@ if df_raw is not None and not df_raw.empty:
 
     has_temp = "temperatura_c" in df_chart.columns and df_chart["temperatura_c"].notnull().any()
     max_observed_y = df_chart["raffica_plot_y"].dropna().max() if not df_chart["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
-    top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.15)
-    ceiling_y = top_y_limit * 1.25
-
-    # Adaptive Text Labels & Vector Arrow Points
-    speed_labels = [""] * len(df_chart)
-    gust_labels = [""] * len(df_chart)
-    labeled_speed_points = []
-
-    valid_mask = df_chart["velocita_knots"].notnull()
-    valid_indices = df_chart.index[valid_mask].tolist()
-
-    if valid_indices:
-        f_idx = valid_indices[0]
-        v0 = df_chart.loc[f_idx, 'velocita_knots']
-        d0 = df_chart.loc[f_idx, 'direzione_deg']
-        speed_labels[f_idx] = f"{v0:.1f}"
-        labeled_speed_points.append({
-            "timestamp": df_chart.loc[f_idx, 'timestamp'],
-            "velocita_plot_y": df_chart.loc[f_idx, 'velocita_plot_y'],
-            "direzione_deg": d0
-        })
-
-        last_s_val = v0
-        last_s_idx = f_idx
-        last_g_val = df_chart.loc[f_idx, 'raffica_knots'] if pd.notnull(df_chart.loc[f_idx, 'raffica_knots']) else -999.0
-        last_g_idx = f_idx
-
-        v_arr = df_chart["velocita_knots"].to_numpy()
-        r_arr = df_chart["raffica_knots"].to_numpy()
-        d_arr = df_chart["direzione_deg"].to_numpy()
-        y_arr = df_chart["velocita_plot_y"].to_numpy()
-        t_arr = df_chart["timestamp"].to_numpy()
-
-        if span_h >= 720:
-            min_pts_step, max_pts_step, delta_threshold = 10, 30, 4.0
-        elif span_h >= 168:
-            min_pts_step, max_pts_step, delta_threshold = 6, 20, 2.5
-        elif span_h >= 72:
-            min_pts_step, max_pts_step, delta_threshold = 4, 14, 2.0
-        else:
-            min_pts_step, max_pts_step, delta_threshold = 2, 8, 1.0
-
-        for idx in valid_indices[1:]:
-            curr_v, curr_d, curr_g = v_arr[idx], d_arr[idx], r_arr[idx]
-            delta_s = abs(curr_v - last_s_val)
-            pts_since_s = idx - last_s_idx
-
-            if (delta_s >= delta_threshold and pts_since_s >= min_pts_step) or pts_since_s >= max_pts_step:
-                speed_labels[idx] = f"{curr_v:.1f}"
-                labeled_speed_points.append({
-                    "timestamp": t_arr[idx],
-                    "velocita_plot_y": y_arr[idx],
-                    "direzione_deg": curr_d
-                })
-                last_s_val, last_s_idx = curr_v, idx
-
-            if pd.notnull(curr_g):
-                delta_g = abs(curr_g - last_g_val)
-                pts_since_g = idx - last_g_idx
-                if (delta_g >= delta_threshold and pts_since_g >= min_pts_step) or pts_since_g >= max_pts_step:
-                    gust_labels[idx] = f"{curr_g:.1f}"
-                    last_g_val, last_g_idx = curr_g, idx
-
-    df_chart["speed_label"] = speed_labels
-    df_chart["gust_label"] = gust_labels
-
-    fig = make_subplots(
-        rows=3 if has_temp else 2,
-        cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.035,
-        subplot_titles=(
-            f"<b>Wind speed and gusts (Stretched Beaufort Scale) – {v_start.strftime('%d.%m %H:%M')} to {v_end.strftime('%d.%m %H:%M')}</b>",
-            "<b>Wind direction & Vectors</b>",
-            "<b>Temperature (°C)</b>" if has_temp else None
-        ),
-        row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
-    )
-
-    t_first = df_chart["timestamp"].min()
-    t_last = df_chart["timestamp"].max()
-    bound_left = min(v_start - left_buffer, t_first)
-    # Right bound clamped strictly to the curve's end or v_end
-    bound_right = min(v_end, t_last)
-
-    # 1. Continuous Gradient Surface
-    y_levels = np.linspace(0, top_y_limit, 45)
-    bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
-    z_gradient = np.tile(bft_levels, (2, 1)).T
-
-    fig.add_trace(go.Heatmap(
-        x=[bound_left, bound_right],
-        y=y_levels,
-        z=z_gradient,
-        colorscale=WIND_COLORSCALE_SMOOTH,
-        zmin=0,
-        zmax=8,
-        showscale=False,
-        hoverinfo="skip"
-    ), row=1, col=1)
-
-    # 2. Masks
-    # Left Wall Mask (Historical void before data starts)
-    if bound_left < t_first:
-        fig.add_trace(go.Scatter(
-            x=[bound_left, t_first, t_first, bound_left, bound_left],
-            y=[0, 0, ceiling_y, ceiling_y, 0],
-            fill="toself",
-            fillcolor="#ffffff",
-            line=dict(color="rgba(255, 255, 255, 0)", width=0),
-            hoverinfo="skip",
-            showlegend=False
-        ), row=1, col=1)
-
-    # Right Wall Mask (Only needed if panned back in time where v_end exceeds t_last)
-    if v_end > t_last:
-        fig.add_trace(go.Scatter(
-            x=[t_last, v_end, v_end, t_last, t_last],
-            y=[0, 0, ceiling_y, ceiling_y, 0],
-            fill="toself",
-            fillcolor="#ffffff",
-            line=dict(color="rgba(255, 255, 255, 0)", width=0),
-            hoverinfo="skip",
-            showlegend=False
-        ), row=1, col=1)
-
-    # Ceiling Mask via tonexty
-    fig.add_trace(go.Scatter(
-        x=df_chart["timestamp"],
-        y=df_chart["raffica_plot_y"],
-        mode="lines",
-        line=dict(color="rgba(255, 255, 255, 0)", width=0),
-        hoverinfo="skip",
-        showlegend=False
-    ), row=1, col=1)
-
-    fig.add_trace(go.Scatter(
-        x=df_chart["timestamp"],
-        y=[ceiling_y] * len(df_chart),
-        mode="lines",
-        fill="tonexty",
-        fillcolor="#ffffff",
-        line=dict(color="rgba(255, 255, 255, 0)", width=0),
-        hoverinfo="skip",
-        showlegend=False
-    ), row=1, col=1)
-
-    # Subplot 1: Gust Trace
-    fig.add_trace(go.Scatter(
-        x=df_chart["timestamp"],
-        y=df_chart["raffica_plot_y"],
-        text=df_chart["gust_label"],
-        textposition="top center",
-        textfont=dict(family="Arial, sans-serif", size=9.5 if span_h >= 720 else 10.0, color="#b91c1c"),
-        customdata=np.stack((df_chart["raffica_bft"], df_chart["raffica_knots"]), axis=-1),
-        mode="lines+markers+text",
-        name="Gust (Raffica)",
-        line=dict(color="#0f172a", width=1.4 if span_h >= 720 else 1.6, dash="dot"),
-        marker=dict(symbol="circle", size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
-        hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
-    ), row=1, col=1)
-
-    # Subplot 1: Speed Trace
-    fig.add_trace(go.Scatter(
-        x=df_chart["timestamp"],
-        y=df_chart["velocita_plot_y"],
-        text=df_chart["speed_label"],
-        textposition="bottom center",
-        textfont=dict(family="Arial, sans-serif", size=9.5 if span_h >= 720 else 10.0, color="#0f172a"),
-        customdata=np.stack((df_chart["velocita_bft"], df_chart["velocita_knots"], df_chart["direzione_deg"]), axis=-1),
-        mode="lines+markers+text",
-        name="Wind Speed (Avg)",
-        line=dict(color="#0f172a", width=1.8 if span_h >= 720 else 2.2),
-        marker=dict(symbol="circle", size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
-        hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
-    ), row=1, col=1)
-
-    # Exact Stemmed Mini-Arrows (Subplot 1)
-    mini_arrow_len = 18
-    for pt in labeled_speed_points:
-        deg = pt["direzione_deg"]
-        if pd.isna(deg) or pd.isna(pt["velocita_plot_y"]):
-            continue
-
-        angle_rad = math.radians((float(deg) + 180.0) % 360.0)
-        dx = mini_arrow_len * math.sin(angle_rad)
-        dy = mini_arrow_len * math.cos(angle_rad)
-
-        fig.add_annotation(
-            x=pt["timestamp"],
-            y=pt["velocita_plot_y"],
-            xref="x1",
-            yref="y1",
-            yshift=-24,
-            ax=-dx,
-            ay=dy,
-            axref="pixel",
-            ayref="pixel",
-            showarrow=True,
-            arrowhead=2,
-            arrowsize=1.35,
-            arrowwidth=1.3,
-            arrowcolor="#0f172a",
-            opacity=0.95
-        )
-
-    # Subplot 2: Direction Scatter
-    fig.add_trace(go.Scatter(
-        x=df_chart["timestamp"],
-        y=df_chart["direzione_deg"],
-        mode="markers",
-        name="Direction",
-        marker=dict(symbol="circle", size=2.5 if span_h >= 720 else (3.0 if span_h >= 72 else 3.5), color="#64748b"),
-        customdata=df_chart[["direzione_cardinal", "velocita_knots", "velocita_bft"]],
-        hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
-    ), row=2, col=1)
-
-    # Subplot 2: Adaptive Vector Arrows
-    target_arrow_count = 14 if span_h >= 720 else (18 if span_h >= 72 else 25)
-    steady_step = max(3, len(df_chart) // target_arrow_count)
-    selected_indices = []
-    if not df_chart.empty:
-        selected_indices.append(0)
-        last_idx = 0
-        last_deg = df_chart.loc[0, "direzione_deg"]
-
-        for i in range(1, len(df_chart)):
-            curr_deg = df_chart.loc[i, "direzione_deg"]
-            if pd.isna(curr_deg):
-                continue
-            delta_deg = abs((curr_deg - last_deg + 180) % 360 - 180)
-            points_since_last = i - last_idx
-
-            angle_sens = 45.0 if span_h >= 720 else (35.0 if span_h >= 72 else 20.0)
-            if delta_deg > angle_sens or points_since_last >= steady_step:
-                selected_indices.append(i)
-                last_idx = i
-                last_deg = curr_deg
-
-    df_sub = df_chart.iloc[selected_indices]
-    arrow_length_px = 36
-
-    for _, row_data in df_sub.iterrows():
-        angle_deg = row_data["arrow_angle"]
-        speed_val = row_data["velocita_knots"]
-
-        if pd.isna(angle_deg) or pd.isna(row_data["direzione_deg"]):
-            continue
-
-        arrow_color = "#16a34a" if (pd.notnull(speed_val) and speed_val >= 18.0) else "#dc2626"
-        rad = math.radians(angle_deg)
-        dx = arrow_length_px * math.sin(rad)
-        dy = arrow_length_px * math.cos(rad)
-
-        fig.add_annotation(
-            x=row_data["timestamp"],
-            y=row_data["direzione_deg"],
-            xref="x2",
-            yref="y2",
-            ax=-dx,
-            ay=dy,
-            axref="pixel",
-            ayref="pixel",
-            showarrow=True,
-            arrowhead=2,
-            arrowsize=2,
-            arrowwidth=1.5,
-            arrowcolor=arrow_color,
-            opacity=0.9
-        )
-
-    # Subplot 3: Temperature
-    if has_temp:
-        is_day = df_chart["timestamp"].dt.hour.between(6, 18)
-        temp_day = df_chart["temperatura_c"].where(is_day, np.nan)
-        temp_night = df_chart["temperatura_c"].where(~is_day, np.nan)
-
-        fig.add_trace(go.Scatter(
-            x=df_chart["timestamp"],
-            y=temp_day,
-            mode="lines+markers",
-            name="Temp (Day: 06-19h)",
-            line=dict(color="#eab308", width=1.8 if span_h >= 720 else 2.2),
-            marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#eab308"),
-            hovertemplate="<b>Temp (Day):</b> %{y:.1f} °C<extra></extra>"
-        ), row=3, col=1)
-
-        if not daytime_only:
-            fig.add_trace(go.Scatter(
-                x=df_chart["timestamp"],
-                y=temp_night,
-                mode="lines+markers",
-                name="Temp (Night: 19-06h)",
-                line=dict(color="#1e3a8a", width=1.8 if span_h >= 720 else 2.2),
-                marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#1e3a8a"),
-                hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
-            ), row=3, col=1)
-
-        fig.update_yaxes(
-            title_text="<b>°C</b>",
-            title_font=dict(color="#0f172a", size=12),
-            tickfont=dict(color="#0f172a", size=11),
-            fixedrange=True,
-            gridcolor="#cbd5e1",
-            showline=False,
-            row=3, col=1
-        )
-
-    # Axis Calibrations
-    bft_ticks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-    bft_stretched_vals = [bft_to_stretched(b) for b in bft_ticks]
-    bft_labels = [
-        "0 Bft", "1 Bft", "2 Bft", "3 Bft (Gentle)", "4 Bft (Moderate)",
-        "5 Bft (Fresh)", "6 Bft (Strong)", "7 Bft (Near Gale)", "8 Bft (Gale)", "9 Bft (Storm)"
-    ]
-
-    fig.update_yaxes(
-        title_text="<b>Beaufort Force (Stretched)</b>",
-        title_font=dict(color="#0f172a", size=12),
-        range=[0, top_y_limit],
-        tickvals=bft_stretched_vals,
-        ticktext=bft_labels,
-        tickfont=dict(color="#0f172a", size=11),
-        fixedrange=True,
-        gridcolor="#cbd5e1",
-        zerolinecolor="#cbd5e1",
-        showline=False,
-        row=1, col=1
-    )
-
-    fig.update_yaxes(
-        title_text="<b>Direction</b>",
-        title_font=dict(color="#0f172a", size=12),
-        range=[-35, 395],
-        tickvals=[0, 90, 180, 270, 360],
-        ticktext=["N (0°)", "E (90°)", "S (180°)", "W (270°)", "N (360°)"],
-        tickfont=dict(color="#0f172a", size=11),
-        fixedrange=True,
-        gridcolor="#cbd5e1",
-        showline=False,
-        row=2, col=1
-    )
-
-    # Clamped to real end point
-    fig.update_xaxes(
-        range=[v_start, bound_right],
-        gridcolor="#cbd5e1",
-        showgrid=True,
-        showline=False
-    )
-
-    fig.update_layout(
-        height=780 if has_temp else 600,
-        paper_bgcolor="#ffffff",
-        plot_bgcolor="#ffffff",
-        hovermode="x unified",
-        dragmode="pan",
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1,
-            bgcolor="rgba(255, 255, 255, 0.9)"
-        ),
-        margin=dict(l=35, r=20, t=50, b=30)
-    )
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True,
-        config={
-            "scrollZoom": True,
-            "displayModeBar": True,
-            "displaylogo": False,
-            "modeBarButtonsToRemove": ["lasso2d", "select2d"]
-        }
-    )
-
-    with st.expander("📋 View Data Log (Active Window)"):
-        st.dataframe(
-            df_chart.sort_values("timestamp", ascending=False),
-            use_container_width=True
-        )
-else:
-    st.info("No data file found yet.")
+    top_y_limit = max(b
