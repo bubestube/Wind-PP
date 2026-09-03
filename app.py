@@ -16,6 +16,7 @@ st.set_page_config(
 CSV_FILE = "porto_pollo_wind_history.csv"
 BFT_EXP = 1.55
 
+# --- Vectorized Calculations ---
 def knots_to_bft(knots):
     if isinstance(knots, pd.Series):
         s = pd.to_numeric(knots, errors="coerce").clip(lower=0)
@@ -98,6 +99,7 @@ st.markdown("""
         background-color: #ffffff !important;
         color: #0f172a !important;
         border: 1px solid #cbd5e1 !important;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
         border-radius: 6px !important;
         font-weight: 600 !important;
     }
@@ -105,6 +107,19 @@ st.markdown("""
         background-color: #f8fafc !important;
         border-color: #94a3b8 !important;
         color: #0284c7 !important;
+    }
+    div.stButton > button p, div.stButton > button span {
+        color: inherit !important;
+    }
+    div[data-testid="stSelectbox"] label p {
+        color: #475569 !important;
+        font-weight: 600 !important;
+    }
+    div[data-testid="stSelectbox"] div[role="combobox"] {
+        background-color: #f1f5f9 !important;
+        color: #0f172a !important;
+        border-color: #cbd5e1 !important;
+        border-radius: 6px !important;
     }
     .slider-month-pill {
         display: inline-flex;
@@ -147,6 +162,7 @@ if df_raw is not None and not df_raw.empty:
     t_global_max = df_raw["timestamp"].max()
     t_global_min = df_raw["timestamp"].min()
 
+    # Top KPI Badges
     speed_bg, speed_fg = get_wg_badge(latest['velocita_knots'])
     gust_bg, gust_fg = get_wg_badge(latest['raffica_knots'])
     temp_val = latest.get("temperatura_c")
@@ -190,7 +206,7 @@ if df_raw is not None and not df_raw.empty:
 
     st.write("")
 
-    # Viewport State
+    # Viewport Window State
     if "window_end_time" not in st.session_state:
         st.session_state.window_end_time = t_global_max.to_pydatetime()
     if "window_span_hours" not in st.session_state:
@@ -200,6 +216,7 @@ if df_raw is not None and not df_raw.empty:
     min_allowable_end = (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime()
     max_allowable_end = t_global_max.to_pydatetime()
 
+    # Continuous Navigation Toolbar
     ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns([1, 1, 1.3, 1.2, 1, 1])
     with ctrl_col1:
         if st.button("◀ -1 Day"):
@@ -242,12 +259,12 @@ if df_raw is not None and not df_raw.empty:
     cur_end = pd.to_datetime(st.session_state.window_end_time)
     cur_start = cur_end - pd.Timedelta(hours=span_h)
     month_str = cur_end.strftime("%B %Y") if cur_start.strftime("%B %Y") == cur_end.strftime("%B %Y") else f"{cur_start.strftime('%B')} – {cur_end.strftime('%B %Y')}"
-    st.markdown(f'<div class="slider-month-pill">📅 <span>{month_str}</span> (Active Window: {span_h}h)</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="slider-month-pill">📅 <span>{month_str}</span> (Window: {span_h}h)</div>', unsafe_allow_html=True)
 
-    # Scrubber slider that directly requests that timeframe from CSV
+    # Scrubber with On-Demand Rerun on Release
     if min_allowable_end < max_allowable_end:
         scrub_pos = st.slider(
-            "Timeline Scrubber (Drag anywhere back to Aug 2026 to load):",
+            "Continuous Timeline Scrubber (Slide to load any point in history):",
             min_value=min_allowable_end,
             max_value=max_allowable_end,
             value=min(max_allowable_end, max(min_allowable_end, st.session_state.window_end_time)),
@@ -261,9 +278,9 @@ if df_raw is not None and not df_raw.empty:
     v_end = pd.to_datetime(st.session_state.window_end_time)
     v_start = v_end - pd.Timedelta(hours=span_h)
 
-    # Load only the requested slice + 12h buffer on either side so mouse wheel zooming works within window
-    buffer = pd.Timedelta(hours=12)
-    df_slice = df_raw[(df_raw["timestamp"] >= v_start - buffer) & (df_raw["timestamp"] <= v_end + buffer)].copy()
+    # Slice with extra margin so panning inside the graphic doesn't hit a hard cutoff
+    canvas_margin = pd.Timedelta(hours=span_h * 0.4)
+    df_slice = df_raw[(df_raw["timestamp"] >= v_start - canvas_margin) & (df_raw["timestamp"] <= v_end + canvas_margin)].copy()
 
     if daytime_only:
         df_slice = df_slice[df_slice["timestamp"].dt.hour.between(6, 18)].copy()
@@ -360,13 +377,16 @@ if df_raw is not None and not df_raw.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
+    # 1. Continuous Gradient Surface
     y_levels = np.linspace(0, top_y_limit, 45)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
     z_gradient = np.tile(bft_levels, (2, 1)).T
 
-    # Gradient surface covers slice + buffer
+    t_fill_start = df_chart["timestamp"].min()
+    t_fill_end = df_chart["timestamp"].max()
+
     fig.add_trace(go.Heatmap(
-        x=[v_start - buffer, v_end + buffer],
+        x=[t_fill_start, t_fill_end],
         y=y_levels,
         z=z_gradient,
         colorscale=WIND_COLORSCALE_SMOOTH,
@@ -376,7 +396,8 @@ if df_raw is not None and not df_raw.empty:
         hoverinfo="skip"
     ), row=1, col=1)
 
-    x_mask = [v_start - buffer] + list(df_chart["timestamp"]) + [v_end + buffer, v_end + buffer, v_start - buffer]
+    # 2. Inverted White Mask
+    x_mask = [t_fill_start] + list(df_chart["timestamp"]) + [t_fill_end, t_fill_end, t_fill_start]
     y_mask = [df_chart["raffica_plot_y"].iloc[0]] + list(df_chart["raffica_plot_y"]) + [
         df_chart["raffica_plot_y"].iloc[-1], top_y_limit * 1.10, top_y_limit * 1.10
     ]
@@ -391,6 +412,7 @@ if df_raw is not None and not df_raw.empty:
         showlegend=False
     ), row=1, col=1)
 
+    # 3. Gust Trace
     fig.add_trace(go.Scatter(
         x=df_chart["timestamp"],
         y=df_chart["raffica_plot_y"],
@@ -405,6 +427,7 @@ if df_raw is not None and not df_raw.empty:
         hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=1, col=1)
 
+    # 4. Speed Trace
     fig.add_trace(go.Scatter(
         x=df_chart["timestamp"],
         y=df_chart["velocita_plot_y"],
@@ -419,6 +442,7 @@ if df_raw is not None and not df_raw.empty:
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
+    # Stemmed mini-arrows on Subplot 1
     mini_arrow_len = 18
     for pt in labeled_speed_points:
         deg = pt["direzione_deg"]
@@ -447,6 +471,7 @@ if df_raw is not None and not df_raw.empty:
             opacity=0.95
         )
 
+    # 5. Direction Subplot
     fig.add_trace(go.Scatter(
         x=df_chart["timestamp"],
         y=df_chart["direzione_deg"],
@@ -508,6 +533,7 @@ if df_raw is not None and not df_raw.empty:
             opacity=0.9
         )
 
+    # 6. Temperature Trace
     if has_temp:
         fig.add_trace(go.Scatter(
             x=df_chart["timestamp"],
@@ -519,6 +545,7 @@ if df_raw is not None and not df_raw.empty:
             hovertemplate="<b>Temp:</b> %{y:.1f} °C<extra></extra>"
         ), row=3, col=1)
 
+    # Axis Calibrations
     bft_ticks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     bft_stretched_vals = [bft_to_stretched(b) for b in bft_ticks]
     bft_labels = ["0 Bft", "1 Bft", "2 Bft", "3 Bft", "4 Bft", "5 Bft", "6 Bft", "7 Bft", "8 Bft", "9 Bft"]
