@@ -420,13 +420,13 @@ if df_all is not None and not df_all.empty:
     t_first = df_plot_lines["timestamp"].min()
     t_last = df_plot_lines["timestamp"].max()
 
-    # 1. 2D Background Gradient Surface (Spans from t_first to t_last only)
+    # 1. Background Gradient Heatmap
     y_levels = np.linspace(0, top_y_limit, 60)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
     z_gradient = np.tile(bft_levels, (2, 1)).T
 
     fig.add_trace(go.Heatmap(
-        x=[t_first, t_last],
+        x=[v_start, v_end],
         y=y_levels,
         z=z_gradient,
         colorscale=WIND_COLORSCALE_SMOOTH,
@@ -436,42 +436,30 @@ if df_all is not None and not df_all.empty:
         hoverinfo="skip"
     ), row=1, col=1)
 
-    # 2. Flank Blockers: Cover any margins outside data bounds
-    if v_start < t_first:
-        fig.add_trace(go.Scatter(
-            x=[v_start, t_first, t_first, v_start, v_start],
-            y=[0, 0, ceiling_y, ceiling_y, 0],
-            fill="toself",
-            fillcolor="#f8fafc",
-            line=dict(color="rgba(0,0,0,0)", width=0),
-            hoverinfo="skip",
-            showlegend=False
-        ), row=1, col=1)
+    # 2. Lower Path Anchored to Floor at (t_first, 0) and (t_last, 0)
+    # Extends across entire horizontal window [v_start, v_end] along the floor,
+    # then climbs to the curve points, and drops back to the floor.
+    x_lower = [v_start, t_first, t_first] + list(df_plot_lines["timestamp"]) + [t_last, t_last, v_end]
+    y_lower = [0.0, 0.0, df_plot_lines["raffica_plot_y"].iloc[0]] + list(df_plot_lines["raffica_plot_y"]) + [df_plot_lines["raffica_plot_y"].iloc[-1], 0.0, 0.0]
 
-    if v_end > t_last:
-        fig.add_trace(go.Scatter(
-            x=[t_last, v_end, v_end, t_last, t_last],
-            y=[0, 0, ceiling_y, ceiling_y, 0],
-            fill="toself",
-            fillcolor="#f8fafc",
-            line=dict(color="rgba(0,0,0,0)", width=0),
-            hoverinfo="skip",
-            showlegend=False
-        ), row=1, col=1)
-
-    # 3. Vector-Perfect Ceiling Mask via tonexty: Masks strictly above the gust line
     fig.add_trace(go.Scatter(
-        x=df_plot_lines["timestamp"],
-        y=df_plot_lines["raffica_plot_y"],
+        x=x_lower,
+        y=y_lower,
         mode="lines",
         line=dict(color="rgba(0,0,0,0)", width=0),
         hoverinfo="skip",
         showlegend=False
     ), row=1, col=1)
 
+    # 3. Upper Ceiling Line Mask (fill="tonexty")
+    # Fills from the ceiling down to y_lower. Because y_lower is 0.0 outside the curve,
+    # this completely blocks the background everywhere except strictly under the curve.
+    x_upper = [v_start, v_end]
+    y_upper = [ceiling_y, ceiling_y]
+
     fig.add_trace(go.Scatter(
-        x=df_plot_lines["timestamp"],
-        y=[ceiling_y] * len(df_plot_lines),
+        x=x_upper,
+        y=y_upper,
         mode="lines",
         fill="tonexty",
         fillcolor="#f8fafc",
