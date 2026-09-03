@@ -41,25 +41,16 @@ def deg_to_cardinal(deg):
     ix = int(round(deg / (360.0 / len(dirs)))) % len(dirs)
     return dirs[ix]
 
-# Continuous Beaufort Color Scale for Area Fills (0 to 8+ Bft)
-WIND_COLORSCALE_GUST = [
-    [0.00, "rgba(255, 255, 255, 0.25)"],  # 0-1 Bft: Calm / Light
-    [0.22, "rgba(56, 189, 248, 0.30)"],   # 2-3 Bft: Light/Gentle Breeze
-    [0.40, "rgba(37, 99, 235, 0.35)"],    # 4 Bft: Moderate Breeze
-    [0.55, "rgba(34, 197, 94, 0.40)"],    # 5 Bft: Fresh Breeze
-    [0.70, "rgba(234, 179, 8, 0.45)"],    # 6 Bft: Strong Breeze
-    [0.85, "rgba(168, 85, 247, 0.50)"],   # 7 Bft: Near Gale
-    [1.00, "rgba(239, 68, 68, 0.55)"]     # 8+ Bft: Gale / Storm
-]
-
-WIND_COLORSCALE_SPEED = [
-    [0.00, "rgba(255, 255, 255, 0.50)"],
-    [0.22, "rgba(56, 189, 248, 0.55)"],
-    [0.40, "rgba(37, 99, 235, 0.60)"],
-    [0.55, "rgba(34, 197, 94, 0.65)"],
-    [0.70, "rgba(234, 179, 8, 0.70)"],
-    [0.85, "rgba(168, 85, 247, 0.75)"],
-    [1.00, "rgba(239, 68, 68, 0.80)"]
+# Continuous Beaufort Color Scale for Horizontal Area Fill
+WIND_COLORSCALE_SMOOTH = [
+    [0.00, "#ffffff"],  # 0 Bft
+    [0.12, "#e0f2fe"],  # 1 Bft
+    [0.25, "#7dd3fc"],  # 2-3 Bft
+    [0.40, "#38bdf8"],  # 4 Bft
+    [0.55, "#4ade80"],  # 5 Bft
+    [0.70, "#facc15"],  # 6 Bft
+    [0.85, "#c084fc"],  # 7 Bft
+    [1.00, "#f87171"]   # 8+ Bft
 ]
 
 def get_wg_badge(val):
@@ -106,86 +97,45 @@ st.markdown("""
         font-family: monospace;
     }
 
-    /* 1. All Navigation & Action Buttons -> Solid White Fill */
-    div.stButton > button,
-    div.stButton > button:hover,
-    div.stButton > button:focus,
-    div.stButton > button:active,
-    div.stButton > button:visited {
+    div.stButton > button {
         background-color: #ffffff !important;
-        background: #ffffff !important;
         color: #0f172a !important;
         border: 1px solid #cbd5e1 !important;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
         border-radius: 6px !important;
         font-weight: 600 !important;
     }
     div.stButton > button:hover {
         background-color: #f8fafc !important;
-        background: #f8fafc !important;
         border-color: #94a3b8 !important;
         color: #0284c7 !important;
     }
-    div.stButton > button p,
-    div.stButton > button span {
+    div.stButton > button p, div.stButton > button span {
         color: inherit !important;
     }
 
-    /* 2. Window Width Dropdown -> Light Grey Fill */
     div[data-testid="stSelectbox"] label p {
         color: #475569 !important;
         font-weight: 600 !important;
     }
-    div[data-testid="stSelectbox"] div[data-baseweb="select"],
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
     div[data-testid="stSelectbox"] div[role="combobox"] {
         background-color: #f1f5f9 !important;
-        background: #f1f5f9 !important;
         color: #0f172a !important;
         border-color: #cbd5e1 !important;
         border-radius: 6px !important;
     }
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] * {
-        color: #0f172a !important;
-        fill: #0f172a !important;
-    }
-    /* Popover Menu Options for Selectbox */
-    div[data-baseweb="popover"] ul,
-    div[data-baseweb="popover"] li {
-        background-color: #f1f5f9 !important;
-        color: #0f172a !important;
-    }
-    div[data-baseweb="popover"] li:hover,
-    div[data-baseweb="popover"] li[aria-selected="true"] {
-        background-color: #e2e8f0 !important;
-        color: #0284c7 !important;
-    }
 
-    /* 3. Daytime Only Control -> Solid White Fill */
     div[data-testid="stCheckbox"] {
         background-color: #ffffff !important;
         border: 1px solid #cbd5e1 !important;
         border-radius: 6px !important;
         padding: 5px 10px !important;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.04) !important;
         margin-top: 25px !important;
-    }
-    div[data-testid="stCheckbox"] label span[role="checkbox"] {
-        background-color: #ffffff !important;
-        border: 1.5px solid #94a3b8 !important;
-        border-radius: 4px !important;
-    }
-    div[data-testid="stCheckbox"] label span[role="checkbox"][aria-checked="true"] {
-        background-color: #0284c7 !important;
-        border-color: #0284c7 !important;
     }
     div[data-testid="stCheckbox"] label p {
         color: #0f172a !important;
         font-weight: 600 !important;
-        margin: 0 !important;
     }
 
-    /* 4. Month Reading Pill above Slider */
     .slider-month-pill {
         display: inline-flex;
         align-items: center;
@@ -197,7 +147,6 @@ st.markdown("""
         font-size: 0.88rem;
         font-weight: 600;
         color: #0f172a;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
         margin-bottom: 2px;
     }
     </style>
@@ -205,7 +154,6 @@ st.markdown("""
 
 st.title("🪁 Porto Pollo (Sardinia) – Live Wind Station")
 
-# 1. Fast Cached CSV Loader
 @st.cache_data(ttl=60, show_spinner=False)
 def load_all_records(csv_path):
     if not os.path.exists(csv_path):
@@ -229,7 +177,6 @@ if df_all is not None and not df_all.empty:
     t_global_max = df_all["timestamp"].max()
     t_global_min = df_all["timestamp"].min()
 
-    # 2. Status KPI Cards
     speed_bg, speed_fg = get_wg_badge(latest['velocita_knots'])
     gust_bg, gust_fg = get_wg_badge(latest['raffica_knots'])
     temp_val = latest.get("temperatura_c")
@@ -273,7 +220,6 @@ if df_all is not None and not df_all.empty:
 
     st.write("")
 
-    # 3. Dynamic Timeline Navigation & Window Scrubber
     if "window_end_time" not in st.session_state:
         st.session_state.window_end_time = t_global_max.to_pydatetime()
     if "window_span_hours" not in st.session_state:
@@ -315,7 +261,6 @@ if df_all is not None and not df_all.empty:
             st.session_state.window_end_time = t_global_max.to_pydatetime()
             st.rerun()
 
-    # Active Month Pill
     cur_end_preview = pd.to_datetime(st.session_state.window_end_time)
     cur_start_preview = cur_end_preview - pd.Timedelta(hours=st.session_state.window_span_hours)
     if cur_start_preview.strftime("%B %Y") == cur_end_preview.strftime("%B %Y"):
@@ -330,7 +275,6 @@ if df_all is not None and not df_all.empty:
         unsafe_allow_html=True
     )
 
-    # High-precision Timeline Slider for Continuous Scrolling
     min_slider = (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime()
     max_slider = t_global_max.to_pydatetime()
 
@@ -348,7 +292,6 @@ if df_all is not None and not df_all.empty:
     v_end = pd.to_datetime(st.session_state.window_end_time)
     v_start = v_end - pd.Timedelta(hours=st.session_state.window_span_hours)
 
-    # 4. SLICE ONLY THE REQUESTED TIME WINDOW ON DEMAND
     df_slice = df_all[(df_all["timestamp"] >= v_start) & (df_all["timestamp"] <= v_end)].copy()
 
     if daytime_only:
@@ -358,15 +301,14 @@ if df_all is not None and not df_all.empty:
         st.warning("No records in selected window.")
         df_slice = df_all.tail(20).copy()
 
-    # --- Adaptive Density Reduction for Trace Markers ---
     span_h = st.session_state.window_span_hours
-    if span_h >= 720:          # 30 Days: 2-hour buckets
+    if span_h >= 720:
         resample_rule = "2h"
-    elif span_h >= 168:        # 7 Days: 30-minute buckets
+    elif span_h >= 168:
         resample_rule = "30min"
-    elif span_h >= 72:         # 3 Days: 15-minute buckets
-        resample_rule = "15min"
-    else:                      # <= 1 Day: Native resolution
+    elif span_h >= 72:
+        resample_rule = "20min"
+    else:
         resample_rule = None
 
     if resample_rule is not None and not df_slice.empty:
@@ -387,40 +329,13 @@ if df_all is not None and not df_all.empty:
     df_slice["arrow_angle"] = (df_slice["direzione_deg"].fillna(0) + 180) % 360
 
     has_temp = "temperatura_c" in df_slice.columns and df_slice["temperatura_c"].notnull().any()
+    df_plot_lines = df_slice.sort_values("timestamp").reset_index(drop=True)
 
-    # Gap Disconnectors
-    df_plot = df_slice.sort_values("timestamp").reset_index(drop=True)
-    time_diffs = df_plot["timestamp"].diff()
-    if span_h >= 720:
-        gap_threshold = pd.Timedelta(hours=8)
-    elif span_h >= 72:
-        gap_threshold = pd.Timedelta(hours=2)
-    else:
-        gap_threshold = pd.Timedelta(minutes=45)
+    # Upper boundary limit for plot area and masking
+    max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
+    top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
 
-    gap_indices = df_plot[time_diffs > gap_threshold].index
-
-    if len(gap_indices) > 0:
-        nan_rows = []
-        for idx in gap_indices:
-            prev_time = df_plot.loc[idx - 1, "timestamp"]
-            nan_rows.append(pd.DataFrame([{
-                "timestamp": prev_time + pd.Timedelta(seconds=1),
-                "velocita_knots": np.nan,
-                "raffica_knots": np.nan,
-                "velocita_bft": np.nan,
-                "raffica_bft": np.nan,
-                "velocita_plot_y": np.nan,
-                "raffica_plot_y": np.nan,
-                "temperatura_c": np.nan,
-                "direzione_deg": np.nan,
-                "direzione_cardinal": None
-            }]))
-        df_plot_lines = pd.concat([df_plot] + nan_rows).sort_values("timestamp").reset_index(drop=True)
-    else:
-        df_plot_lines = df_plot.copy()
-
-    # Adaptive Text Labels & Vector Arrow Anchors
+    # Dynamic Labels & Arrow Vectors
     speed_labels = [""] * len(df_plot_lines)
     gust_labels = [""] * len(df_plot_lines)
     labeled_speed_points = []
@@ -451,27 +366,16 @@ if df_all is not None and not df_all.empty:
         t_arr = df_plot_lines["timestamp"].to_numpy()
 
         if span_h >= 720:
-            min_pts_step = 10
-            max_pts_step = 30
-            delta_threshold = 4.0
+            min_pts_step, max_pts_step, delta_threshold = 10, 30, 4.0
         elif span_h >= 168:
-            min_pts_step = 6
-            max_pts_step = 20
-            delta_threshold = 2.5
+            min_pts_step, max_pts_step, delta_threshold = 6, 20, 2.5
         elif span_h >= 72:
-            min_pts_step = 4
-            max_pts_step = 14
-            delta_threshold = 2.0
+            min_pts_step, max_pts_step, delta_threshold = 4, 14, 2.0
         else:
-            min_pts_step = 2
-            max_pts_step = 8
-            delta_threshold = 1.0
+            min_pts_step, max_pts_step, delta_threshold = 2, 8, 1.0
 
         for idx in valid_indices[1:]:
-            curr_v = v_arr[idx]
-            curr_d = d_arr[idx]
-            curr_g = r_arr[idx]
-
+            curr_v, curr_d, curr_g = v_arr[idx], d_arr[idx], r_arr[idx]
             delta_s = abs(curr_v - last_s_val)
             pts_since_s = idx - last_s_idx
 
@@ -482,53 +386,17 @@ if df_all is not None and not df_all.empty:
                     "velocita_plot_y": y_arr[idx],
                     "direzione_deg": curr_d
                 })
-                last_s_val = curr_v
-                last_s_idx = idx
+                last_s_val, last_s_idx = curr_v, idx
 
             if pd.notnull(curr_g):
                 delta_g = abs(curr_g - last_g_val)
                 pts_since_g = idx - last_g_idx
                 if (delta_g >= delta_threshold and pts_since_g >= min_pts_step) or pts_since_g >= max_pts_step:
                     gust_labels[idx] = f"{curr_g:.1f}"
-                    last_g_val = curr_g
-                    last_g_idx = idx
+                    last_g_val, last_g_idx = curr_g, idx
 
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
-
-    # High-Density Fluid Gradient Mesh (Independent from Line Decimation)
-    if span_h >= 720:
-        fill_res = "5min"
-        bar_width_ms = int(5.25 * 60 * 1000)
-    elif span_h >= 168:
-        fill_res = "3min"
-        bar_width_ms = int(3.15 * 60 * 1000)
-    elif span_h >= 72:
-        fill_res = "2min"
-        bar_width_ms = int(2.1 * 60 * 1000)
-    else:
-        fill_res = "1min"
-        bar_width_ms = int(1.1 * 60 * 1000)
-
-    fill_segments = []
-    seg_start = 0
-    gap_pos = list(gap_indices) + [len(df_plot)]
-
-    for g_pos in gap_pos:
-        seg = df_plot.iloc[seg_start:g_pos]
-        if len(seg) >= 2:
-            seg_resampled = (
-                seg.set_index("timestamp")[["velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]]
-                .resample(fill_res)
-                .interpolate(method="time")
-                .reset_index()
-            )
-            fill_segments.append(seg_resampled)
-        elif len(seg) == 1:
-            fill_segments.append(seg[["timestamp", "velocita_plot_y", "raffica_plot_y", "velocita_bft", "raffica_bft"]])
-        seg_start = g_pos
-
-    df_gradient_fill = pd.concat(fill_segments, ignore_index=True) if fill_segments else df_plot.copy()
 
     # 5. Multi-Panel Subplots
     fig = make_subplots(
@@ -544,40 +412,38 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # Subplot 1: Gust Gradient Fill Area
-    fig.add_trace(go.Bar(
-        x=df_gradient_fill["timestamp"],
-        y=df_gradient_fill["raffica_plot_y"],
-        offsetgroup="gust",
-        marker=dict(
-            color=df_gradient_fill["raffica_bft"],
-            colorscale=WIND_COLORSCALE_GUST,
-            cmin=0,
-            cmax=8,
-            line=dict(width=0)
-        ),
-        width=bar_width_ms,
-        hoverinfo="skip",
-        showlegend=False,
-        name="Gust Gradient Fill"
+    # --- TRUE CONTINUOUS 2D HORIZONTAL GRADIENT SURFACE ---
+    # Construct a continuous 2D vertical gradient mesh spanning v_start to v_end
+    y_levels = np.linspace(0, top_y_limit, 45)
+    bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
+    z_gradient = np.tile(bft_levels, (2, 1)).T  # (n_y, 2) mesh
+
+    fig.add_trace(go.Heatmap(
+        x=[v_start, v_end],
+        y=y_levels,
+        z=z_gradient,
+        colorscale=WIND_COLORSCALE_SMOOTH,
+        zmin=0,
+        zmax=8,
+        showscale=False,
+        hoverinfo="skip"
     ), row=1, col=1)
 
-    # Subplot 1: Sustained Speed Gradient Fill Area
-    fig.add_trace(go.Bar(
-        x=df_gradient_fill["timestamp"],
-        y=df_gradient_fill["velocita_plot_y"],
-        offsetgroup="speed",
-        marker=dict(
-            color=df_gradient_fill["velocita_bft"],
-            colorscale=WIND_COLORSCALE_SPEED,
-            cmin=0,
-            cmax=8,
-            line=dict(width=0)
-        ),
-        width=bar_width_ms,
+    # --- INVERTED MASK: BLOCKS OUT EVERYTHING ABOVE GUST LINE ---
+    # Creates an opaque ceiling mask in background white, exposing only the gradient below the gust curve
+    x_mask = [v_start] + list(df_plot_lines["timestamp"]) + [v_end, v_end, v_start]
+    y_mask = [df_plot_lines["raffica_plot_y"].iloc[0]] + list(df_plot_lines["raffica_plot_y"]) + [
+        df_plot_lines["raffica_plot_y"].iloc[-1], top_y_limit * 1.05, top_y_limit * 1.05
+    ]
+
+    fig.add_trace(go.Scatter(
+        x=x_mask,
+        y=y_mask,
+        fill="toself",
+        fillcolor="#ffffff",
+        line=dict(color="rgba(255, 255, 255, 0)", width=0),
         hoverinfo="skip",
-        showlegend=False,
-        name="Speed Gradient Fill"
+        showlegend=False
     ), row=1, col=1)
 
     # Subplot 1: Gust Trace
@@ -590,7 +456,7 @@ if df_all is not None and not df_all.empty:
         customdata=np.stack((df_plot_lines["raffica_bft"], df_plot_lines["raffica_knots"]), axis=-1),
         mode="lines+markers+text",
         name="Gust (Raffica)",
-        connectgaps=False,
+        connectgaps=True,
         line=dict(color="#0f172a", width=1.4 if span_h >= 720 else 1.6, dash="dot"),
         marker=dict(symbol="circle", size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
         hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
@@ -606,7 +472,7 @@ if df_all is not None and not df_all.empty:
         customdata=np.stack((df_plot_lines["velocita_bft"], df_plot_lines["velocita_knots"], df_plot_lines["direzione_deg"]), axis=-1),
         mode="lines+markers+text",
         name="Wind Speed (Avg)",
-        connectgaps=False,
+        connectgaps=True,
         line=dict(color="#0f172a", width=1.8 if span_h >= 720 else 2.2),
         marker=dict(size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
@@ -776,9 +642,6 @@ if df_all is not None and not df_all.empty:
         "5 Bft (Fresh)", "6 Bft (Strong)", "7 Bft (Near Gale)", "8 Bft (Gale)", "9 Bft (Storm)"
     ]
 
-    max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
-    top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
-
     # Subplot 1 Y-Axis: Beaufort Force
     fig.update_yaxes(
         title_text="<b>Beaufort Force (Stretched)</b>",
@@ -820,8 +683,6 @@ if df_all is not None and not df_all.empty:
         height=780 if has_temp else 600,
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
-        bargap=0,
-        barmode="overlay",
         font=dict(color="#1e293b", family="Arial, sans-serif"),
         dragmode="pan",
         hovermode="x unified",
@@ -836,7 +697,6 @@ if df_all is not None and not df_all.empty:
         margin=dict(l=35, r=20, t=50, b=30)
     )
 
-    # 6. Render Chart
     st.plotly_chart(
         fig,
         use_container_width=True,
