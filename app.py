@@ -147,7 +147,7 @@ if df_all is not None and not df_all.empty:
     t_global_max = df_all["timestamp"].max()
     t_global_min = df_all["timestamp"].min()
 
-    # KPI Top Cards
+    # Top Metric KPI Cards
     speed_bg, speed_fg = get_wg_badge(latest['velocita_knots'])
     gust_bg, gust_fg = get_wg_badge(latest['raffica_knots'])
     temp_val = latest.get("temperatura_c")
@@ -191,11 +191,11 @@ if df_all is not None and not df_all.empty:
 
     st.write("")
 
-    # Interactive Navigation Hint & Quick Jump Toolbar
+    # Interactive Navigation Hint & Reset Button
     bar_col1, bar_col2 = st.columns([4, 1])
     with bar_col1:
         st.markdown(
-            '<div class="scroll-hint">🖱️ <b>Infinite Canvas:</b> Drag horizontally to pan backwards in time. Scroll / pinch to zoom. Use the minimap slider below for global scrubbing.</div>',
+            '<div class="scroll-hint">🖱️ <b>Interactive Canvas:</b> Drag horizontally to pan backwards in time. Scroll or pinch to zoom. Use the minimap slider below for global scrubbing.</div>',
             unsafe_allow_html=True
         )
     with bar_col2:
@@ -215,28 +215,74 @@ if df_all is not None and not df_all.empty:
     df_chart["raffica_bft"] = knots_to_bft(df_chart["raffica_knots"])
     df_chart["velocita_plot_y"] = bft_to_stretched(df_chart["velocita_bft"])
     df_chart["raffica_plot_y"] = bft_to_stretched(df_chart["raffica_bft"])
-    # Plotly's symbol="arrow-up" points North (0°). Rotating by arrow_angle points to wind direction:
     df_chart["arrow_angle"] = (df_chart["direzione_deg"].fillna(0) + 180) % 360
-
-    # Dynamic Cadence for Windspeed Text Labels & Direction Arrow Glyphs
-    # Step every 3rd point (every 30 mins) to maintain clean readability
-    speed_labels = []
-    gust_labels = []
-    for i, row in df_chart.iterrows():
-        if i % 3 == 0:
-            speed_labels.append(f"{row['velocita_knots']:.1f}")
-            gust_labels.append(f"{row['raffica_knots']:.1f}")
-        else:
-            speed_labels.append("")
-            gust_labels.append("")
-    df_chart["speed_label"] = speed_labels
-    df_chart["gust_label"] = gust_labels
 
     has_temp = "temperatura_c" in df_chart.columns and df_chart["temperatura_c"].notnull().any()
     max_observed_y = df_chart["raffica_plot_y"].dropna().max() if not df_chart["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
     top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.15)
 
-    # Initial default view: Last 24 Hours
+    # Calculate exact labeled points for speed numbers & mini stemmed arrows (Subplot 1)
+    speed_labels = [""] * len(df_chart)
+    gust_labels = [""] * len(df_chart)
+    labeled_speed_points = []
+
+    valid_mask = df_chart["velocita_knots"].notnull()
+    valid_indices = df_chart.index[valid_mask].tolist()
+
+    if valid_indices:
+        f_idx = valid_indices[0]
+        v0 = df_chart.loc[f_idx, 'velocita_knots']
+        d0 = df_chart.loc[f_idx, 'direzione_deg']
+        speed_labels[f_idx] = f"{v0:.1f}"
+        labeled_speed_points.append({
+            "timestamp": df_chart.loc[f_idx, 'timestamp'],
+            "velocita_plot_y": df_chart.loc[f_idx, 'velocita_plot_y'],
+            "direzione_deg": d0
+        })
+
+        last_s_val = v0
+        last_s_idx = f_idx
+        last_g_val = df_chart.loc[f_idx, 'raffica_knots'] if pd.notnull(df_chart.loc[f_idx, 'raffica_knots']) else -999.0
+        last_g_idx = f_idx
+
+        v_arr = df_chart["velocita_knots"].to_numpy()
+        r_arr = df_chart["raffica_knots"].to_numpy()
+        d_arr = df_chart["direzione_deg"].to_numpy()
+        y_arr = df_chart["velocita_plot_y"].to_numpy()
+        t_arr = df_chart["timestamp"].to_numpy()
+
+        min_pts_step, max_pts_step, delta_threshold = 3, 10, 1.5
+
+        for idx in valid_indices[1:]:
+            curr_v = v_arr[idx]
+            curr_d = d_arr[idx]
+            curr_g = r_arr[idx]
+
+            delta_s = abs(curr_v - last_s_val)
+            pts_since_s = idx - last_s_idx
+
+            if (delta_s >= delta_threshold and pts_since_s >= min_pts_step) or pts_since_s >= max_pts_step:
+                speed_labels[idx] = f"{curr_v:.1f}"
+                labeled_speed_points.append({
+                    "timestamp": t_arr[idx],
+                    "velocita_plot_y": y_arr[idx],
+                    "direzione_deg": curr_d
+                })
+                last_s_val = curr_v
+                last_s_idx = idx
+
+            if pd.notnull(curr_g):
+                delta_g = abs(curr_g - last_g_val)
+                pts_since_g = idx - last_g_idx
+                if (delta_g >= delta_threshold and pts_since_g >= min_pts_step) or pts_since_g >= max_pts_step:
+                    gust_labels[idx] = f"{curr_g:.1f}"
+                    last_g_val = curr_g
+                    last_g_idx = idx
+
+    df_chart["speed_label"] = speed_labels
+    df_chart["gust_label"] = gust_labels
+
+    # Initial view: Last 24 Hours
     default_start = t_global_max - pd.Timedelta(hours=24)
     default_end = t_global_max
 
@@ -285,7 +331,7 @@ if df_all is not None and not df_all.empty:
         showlegend=False
     ), row=1, col=1)
 
-    # 3. Gust Trace (Lines + Markers + Labels Above)
+    # 3. Gust Trace
     fig.add_trace(go.Scatter(
         x=df_chart["timestamp"],
         y=df_chart["raffica_plot_y"],
@@ -300,7 +346,7 @@ if df_all is not None and not df_all.empty:
         hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=1, col=1)
 
-    # 4. Sustained Speed Trace (Lines + Arrow Glyphs + Knots Labels Underneath)
+    # 4. Sustained Speed Trace (Numbers beneath datapoints)
     fig.add_trace(go.Scatter(
         x=df_chart["timestamp"],
         y=df_chart["velocita_plot_y"],
@@ -311,33 +357,103 @@ if df_all is not None and not df_all.empty:
         mode="lines+markers+text",
         name="Wind Speed (Avg)",
         line=dict(color="#0f172a", width=2.0),
-        marker=dict(
-            symbol="arrow-up",
-            size=10,
-            angle=df_chart["arrow_angle"],
-            color="#0f172a"
-        ),
+        marker=dict(symbol="circle", size=3.5, color="#0f172a"),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
-    # 5. Direction Subplot (Arrow Vector Glyphs Colored by Force)
-    # Green if >= 18 knots, Red/Grey otherwise
-    arrow_colors = np.where(df_chart["velocita_knots"] >= 18.0, "#16a34a", "#dc2626")
+    # Exact Stemmed Vector Arrows on Subplot 1
+    mini_arrow_len = 18
+    for pt in labeled_speed_points:
+        deg = pt["direzione_deg"]
+        if pd.isna(deg) or pd.isna(pt["velocita_plot_y"]):
+            continue
 
+        angle_rad = math.radians((float(deg) + 180.0) % 360.0)
+        dx = mini_arrow_len * math.sin(angle_rad)
+        dy = mini_arrow_len * math.cos(angle_rad)
+
+        fig.add_annotation(
+            x=pt["timestamp"],
+            y=pt["velocita_plot_y"],
+            xref="x1",
+            yref="y1",
+            yshift=-24,
+            ax=-dx,
+            ay=dy,
+            axref="pixel",
+            ayref="pixel",
+            showarrow=True,
+            arrowhead=2,
+            arrowsize=1.35,
+            arrowwidth=1.3,
+            arrowcolor="#0f172a",
+            opacity=0.95
+        )
+
+    # 5. Direction Subplot (Circle Points)
     fig.add_trace(go.Scatter(
         x=df_chart["timestamp"],
         y=df_chart["direzione_deg"],
         mode="markers",
-        name="Direction Arrow",
-        marker=dict(
-            symbol="arrow-up",
-            size=13,
-            angle=df_chart["arrow_angle"],
-            color=arrow_colors
-        ),
+        name="Direction",
+        connectgaps=False,
+        marker=dict(symbol="circle", size=3.0, color="#64748b"),
         customdata=df_chart[["direzione_cardinal", "velocita_knots", "velocita_bft"]],
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=2, col=1)
+
+    # Exact Large Stemmed Vector Arrows on Subplot 2
+    arrow_step = max(3, len(df_chart) // 25)
+    selected_indices = []
+    if not df_chart.empty:
+        selected_indices.append(0)
+        last_idx = 0
+        last_deg = df_chart.loc[0, "direzione_deg"]
+
+        for i in range(1, len(df_chart)):
+            curr_deg = df_chart.loc[i, "direzione_deg"]
+            if pd.isna(curr_deg):
+                continue
+            delta_deg = abs((curr_deg - last_deg + 180) % 360 - 180)
+            points_since_last = i - last_idx
+
+            if delta_deg > 25.0 or points_since_last >= arrow_step:
+                selected_indices.append(i)
+                last_idx = i
+                last_deg = curr_deg
+
+    df_sub = df_chart.iloc[selected_indices]
+    arrow_length_px = 36
+
+    for _, row_data in df_sub.iterrows():
+        angle_deg = row_data["arrow_angle"]
+        speed_val = row_data["velocita_knots"]
+
+        if pd.isna(angle_deg) or pd.isna(row_data["direzione_deg"]):
+            continue
+
+        arrow_color = "#16a34a" if (pd.notnull(speed_val) and speed_val >= 18.0) else "#dc2626"
+
+        rad = math.radians(angle_deg)
+        dx = arrow_length_px * math.sin(rad)
+        dy = arrow_length_px * math.cos(rad)
+
+        fig.add_annotation(
+            x=row_data["timestamp"],
+            y=row_data["direzione_deg"],
+            xref="x2",
+            yref="y2",
+            ax=-dx,
+            ay=dy,
+            axref="pixel",
+            ayref="pixel",
+            showarrow=True,
+            arrowhead=2,
+            arrowsize=2,
+            arrowwidth=1.5,
+            arrowcolor=arrow_color,
+            opacity=0.9
+        )
 
     # 6. Temperature Trace
     if has_temp:
@@ -357,7 +473,7 @@ if df_all is not None and not df_all.empty:
     bft_labels = ["0 Bft", "1 Bft", "2 Bft", "3 Bft", "4 Bft", "5 Bft", "6 Bft", "7 Bft", "8 Bft", "9 Bft"]
 
     fig.update_yaxes(
-        title_text="<b>Beaufort</b>",
+        title_text="<b>Beaufort Force (Stretched)</b>",
         range=[0, top_y_limit],
         tickvals=bft_stretched_vals,
         ticktext=bft_labels,
