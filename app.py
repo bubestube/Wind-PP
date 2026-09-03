@@ -426,9 +426,7 @@ if df_all is not None and not df_all.empty:
     y_levels = np.linspace(0, top_y_limit, num_y)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
 
-    # Interpolate gust curve onto x_grid for smooth curve clipping
     df_temp_interp = df_plot_lines.set_index("timestamp")
-    # Reindex and interpolate
     all_idx = df_temp_interp.index.union(x_grid)
     df_interp = df_temp_interp.reindex(all_idx).interpolate(method="time").reindex(x_grid)
     gust_y_grid = df_interp["raffica_plot_y"].to_numpy()
@@ -573,7 +571,7 @@ if df_all is not None and not df_all.empty:
             ax=-dx,
             ay=dy,
             axref="pixel",
-            axref="pixel",
+            ayref="pixel",
             showarrow=True,
             arrowhead=2,
             arrowsize=2,
@@ -742,7 +740,7 @@ if df_all is not None and not df_all.empty:
     with st.expander("📋 View Data Log (Active Window)"):
         st.dataframe(
             df_slice.sort_values("timestamp", ascending=False),
-            use_company_width=True if "use_company_width" in dir(st) else use_container_width=True # fallback just in case
+            use_container_width=True
         )
 else:
     st.info("No data file found yet.")
