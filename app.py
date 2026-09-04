@@ -717,7 +717,7 @@ if df_all is not None and not df_all.empty:
         dtick_val = 3 * 3600 * 1000
         tick_format_str = "%H:%M<br>%a %d"
     elif span_h >= 24:
-        dtico_val = 2 * 3600 * 1000
+        dtick_val = 2 * 3600 * 1000
         tick_format_str = "%H:%M<br>%a %d"
     else:
         dtick_val = 1 * 3600 * 1000
