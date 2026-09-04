@@ -423,34 +423,6 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # --- NIGHTTIME BACKGROUND SHADING SHAPES ---
-    night_shapes = []
-    day_cursor = v_start.floor("D")
-    num_rows_total = 3 if has_temp else 2
-    while day_cursor <= v_end + pd.Timedelta(days=2):
-        night_start = day_cursor + pd.Timedelta(hours=19)
-        night_end = day_cursor + pd.Timedelta(days=1, hours=6)
-        if night_start < v_end and night_end > v_start:
-            x_left = max(night_start, v_start)
-            x_right = min(night_end, v_end)
-            for r_idx in range(1, num_rows_total + 1):
-                night_shapes.append(
-                    dict(
-                        type="rect",
-                        xref=f"x{r_idx}" if r_idx > 1 else "x",
-                        yref=f"y{r_idx} domain" if r_idx > 1 else "y domain",
-                        x0=x_left,
-                        x1=x_right,
-                        y0=0,
-                        y1=1,
-                        fillcolor="#e2e8f0",
-                        opacity=0.5,
-                        layer="below",
-                        line_width=0
-                    )
-                )
-        day_cursor += pd.Timedelta(days=1)
-
     # --- TRUE CONTINUOUS 2D HORIZONTAL GRADIENT SURFACE ---
     y_levels = np.linspace(0, top_y_limit, 200)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
@@ -770,7 +742,6 @@ if df_all is not None and not df_all.empty:
         font=dict(color="#1e293b", family="Arial, sans-serif"),
         dragmode=False,
         hovermode="x unified",
-        shapes=night_shapes,  # <--- Injected proper domain-backed layout shapes
         legend=dict(
             orientation="h",
             yanchor="bottom",
