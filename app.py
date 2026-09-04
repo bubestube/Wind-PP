@@ -484,7 +484,7 @@ if df_all is not None and not df_all.empty:
         name="Wind Speed (Avg)",
         connectgaps=True,
         line=dict(color="#0f172a", width=1.8 if span_h >= 720 else 2.2),
-        marker=dict(size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
+        marker=dict(symbol="circle", size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
@@ -688,37 +688,38 @@ if df_all is not None and not df_all.empty:
         row=2, col=1
     )
 
+    # Dynamic format string for time + day/date on top
     if span_h >= 720:
         dtick_val = 24 * 3600 * 1000
         tick_format_str = "%a %d.%m."
     elif span_h >= 168:
         dtick_val = 6 * 3600 * 1000
-        tick_format_str = "%Hh<br>%a %d"
+        tick_format_str = "%H:%M<br>%a %d"
     elif span_h >= 72:
         dtick_val = 3 * 3600 * 1000
-        tick_format_str = "%H:00<br>%a %d"
+        tick_format_str = "%H:%M<br>%a %d"
     elif span_h >= 24:
         dtick_val = 2 * 3600 * 1000
-        tick_format_str = "%H:00<br>%a %d"
+        tick_format_str = "%H:%M<br>%a %d"
     else:
         dtick_val = 1 * 3600 * 1000
-        tick_format_str = "%H:00"
+        tick_format_str = "%H:%M"
 
-    # Move x-axis labels to the top wind graph (Row 1) and hide them on lower subplots
+    # Move x-axis labels to the top of the wind graph (Row 1) including time + day
     fig.update_xaxes(
         range=[v_start, v_end],
         gridcolor="#cbd5e1",
         showgrid=True,
         dtick=dtick_val,
         tickformat=tick_format_str,
-        tickfont=dict(color="#0f172a", size=10.5, family="Arial, sans-serif"),
+        tickfont=dict(color="#0f172a", size=10, family="Arial, sans-serif"),
         showline=False,
         fixedrange=True,
-        side="top",  # <--- Moves timestamp labels to the top of the wind chart
+        side="top",
         row=1, col=1
     )
 
-    # Hide tick labels for lower subplots so they don't duplicate at the bottom
+    # Hide tick labels for lower subplots
     for r in range(2, (4 if has_temp else 3)):
         fig.update_xaxes(
             range=[v_start, v_end],
