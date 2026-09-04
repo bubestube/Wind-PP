@@ -484,7 +484,7 @@ if df_all is not None and not df_all.empty:
         name="Wind Speed (Avg)",
         connectgaps=True,
         line=dict(color="#0f172a", width=1.8 if span_h >= 720 else 2.2),
-        marker=dict(symbol="circle", size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
+        marker=dict(size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
@@ -577,7 +577,7 @@ if df_all is not None and not df_all.empty:
             ax=-dx,
             ay=dy,
             axref="pixel",
-            axref="pixel",
+            ayref="pixel",
             showarrow=True,
             arrowhead=2,
             arrowsize=2,
