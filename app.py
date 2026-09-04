@@ -456,7 +456,7 @@ if df_all is not None and not df_all.empty:
         showlegend=False
     ), row=1, col=1)
 
-    # --- TRANSPARENT NIGHT SHADING BOXES (Row 1: Above curve, Rows 2 & 3: Full height) ---
+    # --- PERFECT RECTANGULAR NIGHT SHADING BOXES ---
     day_cursor = v_start.floor("D")
     while day_cursor <= v_end + pd.Timedelta(days=2):
         night_start = day_cursor + pd.Timedelta(hours=19)
@@ -465,26 +465,18 @@ if df_all is not None and not df_all.empty:
             x_left = max(night_start, v_start)
             x_right = min(night_end, v_end)
 
-            # Row 1 (Wind Speed): Above the gust curve
-            night_df = df_plot_lines[(df_plot_lines["timestamp"] >= x_left) & (df_plot_lines["timestamp"] <= x_right)]
-            if not night_df.empty:
-                night_x = list(night_df["timestamp"])
-                night_y = list(night_df["raffica_plot_y"])
-                
-                poly_x = [x_left] + night_x + [x_right, x_left]
-                poly_y = [top_y_limit * 1.05] + night_y + [top_y_limit * 1.05, top_y_limit * 1.05]
+            # Row 1 (Wind Speed): Perfectly rectangular box from bottom up to top ceiling
+            fig.add_trace(go.Scatter(
+                x=[x_left, x_right, x_right, x_left, x_left],
+                y=[0, 0, top_y_limit * 1.05, top_y_limit * 1.05, 0],
+                fill="toself",
+                fillcolor="rgba(148, 163, 184, 0.22)",
+                line=dict(color="rgba(0,0,0,0)", width=0),
+                hoverinfo="skip",
+                showlegend=False
+            ), row=1, col=1)
 
-                fig.add_trace(go.Scatter(
-                    x=poly_x,
-                    y=poly_y,
-                    fill="toself",
-                    fillcolor="rgba(148, 163, 184, 0.22)",
-                    line=dict(color="rgba(0,0,0,0)", width=0),
-                    hoverinfo="skip",
-                    showlegend=False
-                ), row=1, col=1)
-
-            # Row 2 (Wind Direction): Full height box (-35 to 395)
+            # Row 2 (Wind Direction): Full rectangular box (-35 to 395)
             fig.add_trace(go.Scatter(
                 x=[x_left, x_right, x_right, x_left, x_left],
                 y=[-35, -35, 395, 395, -35],
@@ -495,7 +487,7 @@ if df_all is not None and not df_all.empty:
                 showlegend=False
             ), row=2, col=1)
 
-            # Row 3 (Temperature): Full height box
+            # Row 3 (Temperature): Full rectangular box
             if has_temp:
                 t_min = df_plot_lines["temperatura_c"].min()
                 t_max = df_plot_lines["temperatura_c"].max()
@@ -544,7 +536,7 @@ if df_all is not None and not df_all.empty:
         name="Wind Speed (Avg)",
         connectgaps=True,
         line=dict(color="#0f172a", width=1.8 if span_h >= 720 else 2.2),
-        marker=dict(size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
+        marker=dict(symbol="circle", size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
