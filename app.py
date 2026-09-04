@@ -416,8 +416,8 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # --- TRUE CONTINUOUS 2D HORIZONTAL GRADIENT SURFACE ---
-    y_levels = np.linspace(0, top_y_limit, 45)
+    # --- HIGH-RESOLUTION 2D HORIZONTAL GRADIENT SURFACE (200 Vertical Levels) ---
+    y_levels = np.linspace(0, top_y_limit, 200)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
     z_gradient = np.tile(bft_levels, (2, 1)).T
 
@@ -428,6 +428,7 @@ if df_all is not None and not df_all.empty:
         colorscale=WIND_COLORSCALE_SMOOTH,
         zmin=0,
         zmax=8,
+        zsmooth='best',
         showscale=False,
         hoverinfo="skip"
     ), row=1, col=1)
