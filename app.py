@@ -410,18 +410,39 @@ if df_all is not None and not df_all.empty:
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
 
+    subplot_titles_list = ["", "<b>Wind direction</b>"]
+    if has_temp:
+        subplot_titles_list.append("<b>Temperature (°C)</b>")
+
     fig = make_subplots(
         rows=3 if has_temp else 2,
         cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.035,
-        subplot_titles=(
-            "<b>Wind speed and gusts (Stretched Beaufort Scale)</b>",
-            "<b>Wind direction</b>",
-            "<b>Temperature (°C)</b>" if has_temp else None
-        ),
+        shared_xaxes=False,
+        vertical_spacing=0.038,
+        subplot_titles=tuple(subplot_titles_list),
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
+
+    # --- NIGHTTIME SHADING (Overlay boxes via fig.add_vrect) ---
+    num_rows_total = 3 if has_temp else 2
+    day_cursor = v_start.floor("D")
+    while day_cursor <= v_end + pd.Timedelta(days=2):
+        night_start = day_cursor + pd.Timedelta(hours=19)
+        night_end = day_cursor + pd.Timedelta(days=1, hours=6)
+        if night_start < v_end and night_end > v_start:
+            x_left = max(night_start, v_start)
+            x_right = min(night_end, v_end)
+            for r_idx in range(1, num_rows_total + 1):
+                fig.add_vrect(
+                    x0=x_left,
+                    x1=x_right,
+                    fillcolor="#f1f5f9",
+                    opacity=0.9,
+                    line_width=0,
+                    row=r_idx,
+                    col=1
+                )
+        day_cursor += pd.Timedelta(days=1)
 
     # --- TRUE CONTINUOUS 2D HORIZONTAL GRADIENT SURFACE ---
     y_levels = np.linspace(0, top_y_limit, 200)
@@ -693,16 +714,16 @@ if df_all is not None and not df_all.empty:
         tick_format_str = "%a %d.%m."
     elif span_h >= 168:
         dtick_val = 6 * 3600 * 1000
-        tick_format_str = "%Hh<br>%a %d"
+        tick_format_str = "%H:%M<br>%a %d"
     elif span_h >= 72:
         dtick_val = 3 * 3600 * 1000
-        tick_format_str = "%H:00<br>%a %d"
+        tick_format_str = "%H:%M<br>%a %d"
     elif span_h >= 24:
         dtick_val = 2 * 3600 * 1000
-        tick_format_str = "%H:00<br>%a %d"
+        tick_format_str = "%H:%M<br>%a %d"
     else:
         dtick_val = 1 * 3600 * 1000
-        tick_format_str = "%H:00"
+        tick_format_str = "%H:%M"
 
     fig.update_xaxes(
         range=[v_start, v_end],
@@ -710,9 +731,29 @@ if df_all is not None and not df_all.empty:
         showgrid=True,
         dtick=dtick_val,
         tickformat=tick_format_str,
-        tickfont=dict(color="#0f172a", size=10.5, family="Arial, sans-serif"),
+        tickfont=dict(color="#0f172a", size=10, family="Arial, sans-serif"),
         showline=False,
-        fixedrange=True
+        fixedrange=True,
+        side="top",
+        row=1, col=1
+    )
+
+    for r in range(2, (4 if has_temp else 3)):
+        fig.update_xaxes(
+            range=[v_start, v_end],
+            showticklabels=False,
+            fixedrange=True,
+            row=r, col=1
+        )
+
+    # Center the wind speed and gusts title horizontally at the top
+    fig.add_annotation(
+        xref="paper", yref="paper",
+        x=0.5, y=1.07,
+        text="<b>Wind speed and gusts (Stretched Beaufort Scale)</b>",
+        showarrow=False,
+        font=dict(size=13, color="#0f172a", family="Arial, sans-serif"),
+        xanchor="center", yanchor="bottom"
     )
 
     fig.update_layout(
@@ -730,7 +771,7 @@ if df_all is not None and not df_all.empty:
             x=1,
             bgcolor="rgba(255, 255, 255, 0.9)"
         ),
-        margin=dict(l=35, r=20, t=50, b=30)
+        margin=dict(l=35, r=20, t=65, b=30)
     )
 
     st.plotly_chart(
