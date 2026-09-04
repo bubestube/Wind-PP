@@ -410,16 +410,16 @@ if df_all is not None and not df_all.empty:
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
 
-    subplot_titles_list = ["", "<b>Wind direction</b>"]
-    if has_temp:
-        subplot_titles_list.append("<b>Temperature (°C)</b>")
-
     fig = make_subplots(
         rows=3 if has_temp else 2,
         cols=1,
-        shared_xaxes=False,
-        vertical_spacing=0.038,
-        subplot_titles=tuple(subplot_titles_list),
+        shared_xaxes=True,
+        vertical_spacing=0.035,
+        subplot_titles=(
+            "<b>Wind speed and gusts (Stretched Beaufort Scale)</b>",
+            "<b>Wind direction</b>",
+            "<b>Temperature (°C)</b>" if has_temp else None
+        ),
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
@@ -484,7 +484,7 @@ if df_all is not None and not df_all.empty:
         name="Wind Speed (Avg)",
         connectgaps=True,
         line=dict(color="#0f172a", width=1.8 if span_h >= 720 else 2.2),
-        marker=dict(symbol="circle", size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
+        marker=dict(size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
@@ -693,16 +693,16 @@ if df_all is not None and not df_all.empty:
         tick_format_str = "%a %d.%m."
     elif span_h >= 168:
         dtick_val = 6 * 3600 * 1000
-        tick_format_str = "%H:%M<br>%a %d"
+        tick_format_str = "%Hh<br>%a %d"
     elif span_h >= 72:
         dtick_val = 3 * 3600 * 1000
-        tick_format_str = "%H:%M<br>%a %d"
+        tick_format_str = "%H:00<br>%a %d"
     elif span_h >= 24:
         dtick_val = 2 * 3600 * 1000
-        tick_format_str = "%H:%M<br>%a %d"
+        tick_format_str = "%H:00<br>%a %d"
     else:
         dtick_val = 1 * 3600 * 1000
-        tick_format_str = "%H:%M"
+        tick_format_str = "%H:00"
 
     fig.update_xaxes(
         range=[v_start, v_end],
@@ -710,29 +710,9 @@ if df_all is not None and not df_all.empty:
         showgrid=True,
         dtick=dtick_val,
         tickformat=tick_format_str,
-        tickfont=dict(color="#0f172a", size=10, family="Arial, sans-serif"),
+        tickfont=dict(color="#0f172a", size=10.5, family="Arial, sans-serif"),
         showline=False,
-        fixedrange=True,
-        side="top",
-        row=1, col=1
-    )
-
-    for r in range(2, (4 if has_temp else 3)):
-        fig.update_xaxes(
-            range=[v_start, v_end],
-            showticklabels=False,
-            fixedrange=True,
-            row=r, col=1
-        )
-
-    # Center the wind speed and gusts title horizontally at the top
-    fig.add_annotation(
-        xref="paper", yref="paper",
-        x=0.5, y=1.07,
-        text="<b>Wind speed and gusts (Stretched Beaufort Scale)</b>",
-        showarrow=False,
-        font=dict(size=13, color="#0f172a", family="Arial, sans-serif"),
-        xanchor="center", yanchor="bottom"
+        fixedrange=True
     )
 
     fig.update_layout(
@@ -750,7 +730,7 @@ if df_all is not None and not df_all.empty:
             x=1,
             bgcolor="rgba(255, 255, 255, 0.9)"
         ),
-        margin=dict(l=35, r=20, t=65, b=30)
+        margin=dict(l=35, r=20, t=50, b=30)
     )
 
     st.plotly_chart(
