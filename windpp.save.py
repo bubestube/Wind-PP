@@ -124,18 +124,6 @@ st.markdown("""
         border-radius: 6px !important;
     }
 
-    div[data-testid="stCheckbox"] {
-        background-color: #ffffff !important;
-        border: 1px solid #cbd5e1 !important;
-        border-radius: 6px !important;
-        padding: 5px 10px !important;
-        margin-top: 25px !important;
-    }
-    div[data-testid="stCheckbox"] label p {
-        color: #0f172a !important;
-        font-weight: 600 !important;
-    }
-
     .slider-month-pill {
         display: inline-flex;
         align-items: center;
@@ -226,7 +214,7 @@ if df_all is not None and not df_all.empty:
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 24
 
-    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6, ctrl_col7 = st.columns([1, 1, 1.3, 1.2, 1, 1, 1])
+    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns([1, 1, 1.3, 1, 1, 1])
     with ctrl_col1:
         if st.button("◀ -1 Day"):
             st.session_state.window_end_time = max(
@@ -249,22 +237,20 @@ if df_all is not None and not df_all.empty:
             format_func=lambda h: f"{h} Hours" if h < 24 else f"{h//24} Day{'s' if h > 24 else ''}"
         )
     with ctrl_col4:
-        daytime_only = st.checkbox("☀️ Daytime Only (06-19h)", value=False)
-    with ctrl_col5:
         if st.button("+6 Hours ▶"):
             st.session_state.window_end_time = min(
                 t_global_max.to_pydatetime(),
                 st.session_state.window_end_time + datetime.timedelta(hours=6)
             )
             st.rerun()
-    with ctrl_col6:
+    with ctrl_col5:
         if st.button("+1 Day ▶"):
             st.session_state.window_end_time = min(
                 t_global_max.to_pydatetime(),
                 st.session_state.window_end_time + datetime.timedelta(days=1)
             )
             st.rerun()
-    with ctrl_col7:
+    with ctrl_col6:
         if st.button("🔴 Live Latest"):
             st.session_state.window_end_time = t_global_max.to_pydatetime()
             st.rerun()
@@ -316,9 +302,6 @@ if df_all is not None and not df_all.empty:
             st.rerun()
 
     df_slice = df_all[(df_all["timestamp"] >= v_start) & (df_all["timestamp"] <= v_end)].copy()
-
-    if daytime_only:
-        df_slice = df_slice[df_slice["timestamp"].dt.hour.between(6, 18)].copy()
 
     if df_slice.empty:
         st.warning("No records in selected window.")
@@ -423,27 +406,6 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # --- NIGHTTIME SHADING (Overlay boxes via fig.add_vrect) ---
-    num_rows_total = 3 if has_temp else 2
-    day_cursor = v_start.floor("D")
-    while day_cursor <= v_end + pd.Timedelta(days=2):
-        night_start = day_cursor + pd.Timedelta(hours=19)
-        night_end = day_cursor + pd.Timedelta(days=1, hours=6)
-        if night_start < v_end and night_end > v_start:
-            x_left = max(night_start, v_start)
-            x_right = min(night_end, v_end)
-            for r_idx in range(1, num_rows_total + 1):
-                fig.add_vrect(
-                    x0=x_left,
-                    x1=x_right,
-                    fillcolor="#f1f5f9",
-                    opacity=0.9,
-                    line_width=0,
-                    row=r_idx,
-                    col=1
-                )
-        day_cursor += pd.Timedelta(days=1)
-
     # --- TRUE CONTINUOUS 2D HORIZONTAL GRADIENT SURFACE ---
     y_levels = np.linspace(0, top_y_limit, 200)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
@@ -477,6 +439,58 @@ if df_all is not None and not df_all.empty:
         showlegend=False
     ), row=1, col=1)
 
+    # --- PERFECT RECTANGULAR NIGHT SHADING BOXES ---
+    day_cursor = v_start.floor("D")
+    while day_cursor <= v_end + pd.Timedelta(days=2):
+        night_start = day_cursor + pd.Timedelta(hours=19)
+        night_end = day_cursor + pd.Timedelta(days=1, hours=6)
+        if night_start < v_end and night_end > v_start:
+            x_left = max(night_start, v_start)
+            x_right = min(night_end, v_end)
+
+            # Row 1 (Wind Speed): Perfectly rectangular box from bottom up to top ceiling
+            fig.add_trace(go.Scatter(
+                x=[x_left, x_right, x_right, x_left, x_left],
+                y=[0, 0, top_y_limit * 1.05, top_y_limit * 1.05, 0],
+                fill="toself",
+                fillcolor="rgba(148, 163, 184, 0.22)",
+                line=dict(color="rgba(0,0,0,0)", width=0),
+                hoverinfo="skip",
+                showlegend=False
+            ), row=1, col=1)
+
+            # Row 2 (Wind Direction): Full rectangular box (-35 to 395)
+            fig.add_trace(go.Scatter(
+                x=[x_left, x_right, x_right, x_left, x_left],
+                y=[-35, -35, 395, 395, -35],
+                fill="toself",
+                fillcolor="rgba(148, 163, 184, 0.22)",
+                line=dict(color="rgba(0,0,0,0)", width=0),
+                hoverinfo="skip",
+                showlegend=False
+            ), row=2, col=1)
+
+            # Row 3 (Temperature): Full rectangular box
+            if has_temp:
+                t_min = df_plot_lines["temperatura_c"].min()
+                t_max = df_plot_lines["temperatura_c"].max()
+                t_pad = max(2.0, (t_max - t_min) * 0.1) if pd.notnull(t_min) and pd.notnull(t_max) else 5.0
+                fig.add_trace(go.Scatter(
+                    x=[x_left, x_right, x_right, x_left, x_left],
+                    y=[(t_min - t_pad) if pd.notnull(t_min) else 0,
+                       (t_min - t_pad) if pd.notnull(t_min) else 0,
+                       (t_max + t_pad) if pd.notnull(t_max) else 40,
+                       (t_max + t_pad) if pd.notnull(t_max) else 40,
+                       (t_min - t_pad) if pd.notnull(t_min) else 0],
+                    fill="toself",
+                    fillcolor="rgba(148, 163, 184, 0.22)",
+                    line=dict(color="rgba(0,0,0,0)", width=0),
+                    hoverinfo="skip",
+                    showlegend=False
+                ), row=3, col=1)
+
+        day_cursor += pd.Timedelta(days=1)
+
     # Subplot 1: Gust Trace
     fig.add_trace(go.Scatter(
         x=df_plot_lines["timestamp"],
@@ -505,7 +519,7 @@ if df_all is not None and not df_all.empty:
         name="Wind Speed (Avg)",
         connectgaps=True,
         line=dict(color="#0f172a", width=1.8 if span_h >= 720 else 2.2),
-        marker=dict(size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
+        marker=dict(symbol="circle", size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
@@ -609,32 +623,16 @@ if df_all is not None and not df_all.empty:
 
     # Subplot 3: Temperature
     if has_temp:
-        is_day = df_plot_lines["timestamp"].dt.hour.between(6, 18)
-        temp_day = df_plot_lines["temperatura_c"].where(is_day, np.nan)
-        temp_night = df_plot_lines["temperatura_c"].where(~is_day, np.nan)
-
         fig.add_trace(go.Scatter(
             x=df_plot_lines["timestamp"],
-            y=temp_day,
+            y=df_plot_lines["temperatura_c"],
             mode="lines+markers",
-            name="Temp (Day: 06-19h)",
+            name="Temperature (°C)",
             connectgaps=False,
             line=dict(color="#eab308", width=1.8 if span_h >= 720 else 2.2),
             marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#eab308"),
-            hovertemplate="<b>Temp (Day):</b> %{y:.1f} °C<extra></extra>"
+            hovertemplate="<b>Temp:</b> %{y:.1f} °C<extra></extra>"
         ), row=3, col=1)
-
-        if not daytime_only:
-            fig.add_trace(go.Scatter(
-                x=df_plot_lines["timestamp"],
-                y=temp_night,
-                mode="lines+markers",
-                name="Temp (Night: 19-06h)",
-                connectgaps=False,
-                line=dict(color="#1e3a8a", width=1.8 if span_h >= 720 else 2.2),
-                marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#1e3a8a"),
-                hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
-            ), row=3, col=1)
 
         fig.update_yaxes(
             title_text="<b>°C</b>",
