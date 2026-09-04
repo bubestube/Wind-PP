@@ -612,7 +612,7 @@ if df_all is not None and not df_all.empty:
             ax=-dx,
             ay=dy,
             axref="pixel",
-            axref="pixel",
+            ayref="pixel",
             showarrow=True,
             arrowhead=2,
             arrowsize=2,
@@ -788,21 +788,21 @@ if df_all is not None and not df_all.empty:
         margin=dict(l=35, r=20, t=65, b=30)
     )
 
-st.plotly_chart(
-    fig,
-    use_container_width=True,
-    config={
-        "scrollZoom": False,
-        "displayModeBar": True,
-        "displaylogo": False,
-        "modeBarButtonsToRemove": ["zoom2d", "pan2d", "lasso2d", "select2d", "autoScale2d", "resetScale2d"]
-    }
-)
-
-with st.expander("📋 View Data Log (Active Window)"):
-    st.dataframe(
-        df_slice.sort_values("timestamp", ascending=False),
-        use_container_width=True
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            "scrollZoom": False,
+            "displayModeBar": True,
+            "displaylogo": False,
+            "modeBarButtonsToRemove": ["zoom2d", "pan2d", "lasso2d", "select2d", "autoScale2d", "resetScale2d"]
+        }
     )
+
+    with st.expander("📋 View Data Log (Active Window)"):
+        st.dataframe(
+            df_slice.sort_values("timestamp", ascending=False),
+            use_container_width=True
+        )
 else:
     st.info("No data file found yet.")
