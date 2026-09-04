@@ -226,7 +226,7 @@ if df_all is not None and not df_all.empty:
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 24
 
-    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns([1, 1, 1.3, 1.2, 1, 1])
+    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6, ctrl_col7 = st.columns([1, 1, 1.3, 1.2, 1, 1, 1])
     with ctrl_col1:
         if st.button("◀ -1 Day"):
             st.session_state.window_end_time = max(
@@ -258,6 +258,13 @@ if df_all is not None and not df_all.empty:
             )
             st.rerun()
     with ctrl_col6:
+        if st.button("+1 Day ▶"):
+            st.session_state.window_end_time = min(
+                t_global_max.to_pydatetime(),
+                st.session_state.window_end_time + datetime.timedelta(days=1)
+            )
+            st.rerun()
+    with ctrl_col7:
         if st.button("🔴 Live Latest"):
             st.session_state.window_end_time = t_global_max.to_pydatetime()
             st.rerun()
@@ -570,7 +577,7 @@ if df_all is not None and not df_all.empty:
             ax=-dx,
             ay=dy,
             axref="pixel",
-            ayref="pixel",
+            axref="pixel",
             showarrow=True,
             arrowhead=2,
             arrowsize=2,
@@ -705,7 +712,7 @@ if df_all is not None and not df_all.empty:
         tickformat=tick_format_str,
         tickfont=dict(color="#0f172a", size=10.5, family="Arial, sans-serif"),
         showline=False,
-        fixedrange=True # <--- Locks X-axis against manual user zooming/scrolling
+        fixedrange=True
     )
 
     fig.update_layout(
@@ -713,7 +720,7 @@ if df_all is not None and not df_all.empty:
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
         font=dict(color="#1e293b", family="Arial, sans-serif"),
-        dragmode=False, # <--- Disables dragging/panning
+        dragmode=False,
         hovermode="x unified",
         legend=dict(
             orientation="h",
@@ -730,7 +737,7 @@ if df_all is not None and not df_all.empty:
         fig,
         use_container_width=True,
         config={
-            "scrollZoom": False, # <--- Disables scroll wheel zoom
+            "scrollZoom": False,
             "displayModeBar": True,
             "displaylogo": False,
             "modeBarButtonsToRemove": ["zoom2d", "pan2d", "lasso2d", "select2d", "autoScale2d", "resetScale2d"]
