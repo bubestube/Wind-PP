@@ -423,8 +423,8 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # --- NIGHTTIME SHADING (19:00 to 06:00 across all subplots) ---
-    num_rows_total = 3 if has_temp else 2
+    # --- NIGHTTIME SHADING (Explicit Layout Shapes) ---
+    night_shapes = []
     day_cursor = v_start.floor("D")
     while day_cursor <= v_end + pd.Timedelta(days=2):
         night_start = day_cursor + pd.Timedelta(hours=19)
@@ -432,16 +432,21 @@ if df_all is not None and not df_all.empty:
         if night_start < v_end and night_end > v_start:
             x_left = max(night_start, v_start)
             x_right = min(night_end, v_end)
-            for r_idx in range(1, num_rows_total + 1):
-                fig.add_vrect(
+            night_shapes.append(
+                dict(
+                    type="rect",
+                    xref="x",
+                    yref="paper",
                     x0=x_left,
                     x1=x_right,
+                    y0=0,
+                    y1=1,
                     fillcolor="#f1f5f9",
                     opacity=0.85,
                     layer="below",
-                    line_width=0,
-                    row=r_idx, col=1
+                    line_width=0
                 )
+            )
         day_cursor += pd.Timedelta(days=1)
 
     # --- TRUE CONTINUOUS 2D HORIZONTAL GRADIENT SURFACE ---
@@ -763,6 +768,7 @@ if df_all is not None and not df_all.empty:
         font=dict(color="#1e293b", family="Arial, sans-serif"),
         dragmode=False,
         hovermode="x unified",
+        shapes=night_shapes, # <--- Injected explicit layout shapes for shading
         legend=dict(
             orientation="h",
             yanchor="bottom",
