@@ -764,7 +764,7 @@ if df_all is not None and not df_all.empty:
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=1.03,
+            y=1.07,
             xanchor="right",
             x=1,
             bgcolor="rgba(255, 255, 255, 0.9)"
@@ -778,7 +778,7 @@ if df_all is not None and not df_all.empty:
         config={
             "scrollZoom": False,
             "displayModeBar": True,
-            "displaylogo": False,
+            "displaylogo": false if 'false' in locals() else False,
             "modeBarButtonsToRemove": ["zoom2d", "pan2d", "lasso2d", "select2d", "autoScale2d", "resetScale2d"]
         }
     )
