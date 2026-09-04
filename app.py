@@ -439,7 +439,6 @@ if df_all is not None and not df_all.empty:
             mask_col = y_levels <= limit_y
             z_mesh[mask_col, c] = bft_levels[mask_col]
 
-    # Multi-pass moving average smoothing kernel simulating Gaussian blur (Pure NumPy)
     def multi_pass_smooth(arr, passes=2, kernel_size=5):
         valid_mask = ~np.isnan(arr)
         filled = np.where(valid_mask, arr, 0.0)
@@ -532,7 +531,7 @@ if df_all is not None and not df_all.empty:
         name="Wind Speed (Avg)",
         connectgaps=True,
         line=dict(color="#0f172a", width=1.8 if span_h >= 720 else 2.2),
-        marker=dict(symbol="circle", size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
+        marker=dict(size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
@@ -717,4 +716,84 @@ if df_all is not None and not df_all.empty:
         ticktext=bft_labels,
         tickfont=dict(color="#0f172a", size=11),
         showline=False,
-    ...
+        gridcolor="#cbd5e1",
+        zerolinecolor="#cbd5e1",
+        fixedrange=True,
+        row=1, col=1
+    )
+
+    fig.update_yaxes(
+        title_text="<b>Direction</b>",
+        title_font=dict(color="#0f172a", size=12),
+        range=[-35, 395],
+        tickvals=[0, 90, 180, 270, 360],
+        ticktext=["N (0°)", "E (90°)", "S (180°)", "W (270°)", "N (360°)"],
+        tickfont=dict(color="#0f172a", size=11),
+        showline=False,
+        gridcolor="#cbd5e1",
+        fixedrange=True,
+        row=2, col=1
+    )
+
+    if span_h >= 720:
+        dtick_val = 24 * 3600 * 1000
+        tick_format_str = "%a %d.%m."
+    elif span_h >= 168:
+        dtick_val = 6 * 3600 * 1000
+        tick_format_str = "%Hh<br>%a %d"
+    elif span_h >= 72:
+        dtick_val = 3 * 3600 * 1000
+        tick_format_str = "%H:00<br>%a %d"
+    elif span_h >= 24:
+        dtick_val = 2 * 3600 * 1000
+        tick_format_str = "%H:00<br>%a %d"
+    else:
+        dtick_val = 1 * 3600 * 1000
+        tick_format_str = "%H:00"
+
+    fig.update_xaxes(
+        range=[v_start, v_end],
+        gridcolor="#cbd5e1",
+        showgrid=True,
+        dtick=dtick_val,
+        tickformat=tick_format_str,
+        tickfont=dict(color="#0f172a", size=10.5, family="Arial, sans-serif"),
+        showline=False
+    )
+
+    fig.update_layout(
+        height=780 if has_temp else 600,
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        font=dict(color="#1e293b", family="Arial, sans-serif"),
+        dragmode="pan",
+        hovermode="x unified",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            bgcolor="rgba(255, 255, 255, 0.9)"
+        ),
+        margin=dict(l=35, r=20, t=50, b=30)
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            "scrollZoom": True,
+            "displayModeBar": True,
+            "displaylogo": False,
+            "modeBarButtonsToRemove": ["lasso2d", "select2d"]
+        }
+    )
+
+    with st.expander("📋 View Data Log (Active Window)"):
+        st.dataframe(
+            df_slice.sort_values("timestamp", ascending=False),
+            use_container_width=True
+        )
+else:
+    st.info("No data file found yet.")
