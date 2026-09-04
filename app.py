@@ -211,7 +211,7 @@ if df_all is not None and not df_all.empty:
                 {f"{temp_val:.1f} °C" if pd.notnull(temp_val) else "N/A"}
             </div>
         </div>""", unsafe_allow_html=True)
-    with c5: # <--- Colon restored here
+    with c5:
         st.markdown(f"""<div class="wg-card">
             <div class="wg-card-title">⏱️ Last Reading</div>
             <div class="wg-card-val" style="font-size:1.1rem; padding-top:6px; color:#334155;">
@@ -725,13 +725,14 @@ if df_all is not None and not df_all.empty:
             row=r, col=1
         )
 
+    # Center the wind speed and gusts title horizontally at the top
     fig.add_annotation(
         xref="paper", yref="paper",
-        x=0.0, y=1.07,
+        x=0.5, y=1.07,
         text="<b>Wind speed and gusts (Stretched Beaufort Scale)</b>",
         showarrow=False,
         font=dict(size=13, color="#0f172a", family="Arial, sans-serif"),
-        xanchor="left", yanchor="bottom"
+        xanchor="center", yanchor="bottom"
     )
 
     fig.update_layout(
