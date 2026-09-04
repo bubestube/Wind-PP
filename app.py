@@ -704,6 +704,7 @@ if df_all is not None and not df_all.empty:
         dtick_val = 1 * 3600 * 1000
         tick_format_str = "%H:00"
 
+    # Move x-axis labels to the top wind graph (Row 1) and hide them on lower subplots
     fig.update_xaxes(
         range=[v_start, v_end],
         gridcolor="#cbd5e1",
@@ -712,8 +713,19 @@ if df_all is not None and not df_all.empty:
         tickformat=tick_format_str,
         tickfont=dict(color="#0f172a", size=10.5, family="Arial, sans-serif"),
         showline=False,
-        fixedrange=True
+        fixedrange=True,
+        side="top",  # <--- Moves timestamp labels to the top of the wind chart
+        row=1, col=1
     )
+
+    # Hide tick labels for lower subplots so they don't duplicate at the bottom
+    for r in range(2, (4 if has_temp else 3)):
+        fig.update_xaxes(
+            range=[v_start, v_end],
+            showticklabels=False,
+            fixedrange=True,
+            row=r, col=1
+        )
 
     fig.update_layout(
         height=780 if has_temp else 600,
