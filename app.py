@@ -632,16 +632,17 @@ if df_all is not None and not df_all.empty:
             hovertemplate="<b>Temp (Day):</b> %{y:.1f} °C<extra></extra>"
         ), row=3, col=1)
 
-        fig.add_trace(go.Scatter(
-            x=df_plot_lines["timestamp"],
-            y=temp_night,
-            mode="lines+markers",
-            name="Temp (Night: 19-06h)",
-            connectgaps=False,
-            line=dict(color="#1e3a8a", width=1.8 if span_h >= 720 else 2.2),
-            marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#1e3a8a"),
-            hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
-        ), row=3, col=1)
+        if not daytime_only:
+            fig.add_trace(go.Scatter(
+                x=df_plot_lines["timestamp"],
+                y=temp_night,
+                mode="lines+markers",
+                name="Temp (Night: 19-06h)",
+                connectgaps=False,
+                line=dict(color="#1e3a8a", width=1.8 if span_h >= 720 else 2.2),
+                marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#1e3a8a"),
+                hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
+            ), row=3, col=1)
 
         fig.update_yaxes(
             title_text="<b>°C</b>",
