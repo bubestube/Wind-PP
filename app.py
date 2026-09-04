@@ -6,6 +6,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
+import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title="Porto Pollo – Windguru Live Station",
@@ -155,7 +156,64 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🪁 Porto Pollo Live")
+header_left, header_right = st.columns([3, 1])
+with header_left:
+    st.title("🪁 Porto Pollo Live")
+with header_right:
+    components.html("""
+        <style>
+          #fsBtn {
+            width: 100%;
+            height: 34px;
+            margin-top: 14px;
+            background-color: #ffffff;
+            color: #0f172a;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-weight: 600;
+            font-size: 0.80rem;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+            transition: background-color 0.15s ease, border-color 0.15s ease;
+          }
+          #fsBtn:hover {
+            background-color: #f8fafc;
+            border-color: #94a3b8;
+            color: #0284c7;
+          }
+        </style>
+        <button id="fsBtn"><span>⛶</span> Fullscreen</button>
+        <script>
+          const btn = document.getElementById('fsBtn');
+          btn.addEventListener('click', function () {
+            const rootDoc = window.parent.document;
+            const targetEl = rootDoc.documentElement;
+            const isFs = rootDoc.fullscreenElement || 
+                         rootDoc.webkitFullscreenElement || 
+                         rootDoc.mozFullScreenElement || 
+                         rootDoc.msFullscreenElement;
+
+            if (!isFs) {
+              if (targetEl.requestFullscreen) { targetEl.requestFullscreen(); }
+              else if (targetEl.webkitRequestFullscreen) { targetEl.webkitRequestFullscreen(); }
+              else if (targetEl.mozRequestFullScreen) { targetEl.mozRequestFullScreen(); }
+              else if (targetEl.msRequestFullscreen) { targetEl.msRequestFullscreen(); }
+              btn.innerHTML = '<span>✕</span> Exit';
+            } else {
+              if (rootDoc.exitFullscreen) { rootDoc.exitFullscreen(); }
+              else if (rootDoc.webkitExitFullscreen) { rootDoc.webkitExitFullscreen(); }
+              else if (rootDoc.mozCancelFullScreen) { rootDoc.mozCancelFullScreen(); }
+              else if (rootDoc.msExitFullscreen) { rootDoc.msExitFullscreen(); }
+              btn.innerHTML = '<span>⛶</span> Fullscreen';
+            }
+          });
+        </script>
+    """, height=50)
 
 @st.cache_data(ttl=60, show_spinner=False)
 def load_all_records(csv_path):
@@ -504,9 +562,9 @@ if df_all is not None and not df_all.empty:
                     fill="toself",
                     fillcolor="rgba(148, 163, 184, 0.22)",
                     line=dict(color="rgba(0,0,0,0)", width=0),
-                    hoverinfo="skip",
-                    showlegend=False
-                ), row=3, col=1)
+                hoverinfo="skip",
+                showlegend=False
+            ), row=3, col=1)
 
         day_cursor += pd.Timedelta(days=1)
 
