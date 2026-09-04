@@ -717,7 +717,7 @@ if df_all is not None and not df_all.empty:
         dtick_val = 3 * 3600 * 1000
         tick_format_str = "%H:%M<br>%a %d"
     elif span_h >= 24:
-        dtick_val = 2 * 3600 * 1000
+        dtico_val = 2 * 3600 * 1000
         tick_format_str = "%H:%M<br>%a %d"
     else:
         dtick_val = 1 * 3600 * 1000
@@ -764,7 +764,7 @@ if df_all is not None and not df_all.empty:
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=1.14,
+            y=1.03,
             xanchor="right",
             x=1,
             bgcolor="rgba(255, 255, 255, 0.9)"
