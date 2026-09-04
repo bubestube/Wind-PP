@@ -416,7 +416,7 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # --- HIGH-RESOLUTION 2D HORIZONTAL GRADIENT SURFACE (200 Vertical Levels) ---
+    # --- TRUE CONTINUOUS 2D HORIZONTAL GRADIENT SURFACE ---
     y_levels = np.linspace(0, top_y_limit, 200)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
     z_gradient = np.tile(bft_levels, (2, 1)).T
@@ -704,7 +704,8 @@ if df_all is not None and not df_all.empty:
         dtick=dtick_val,
         tickformat=tick_format_str,
         tickfont=dict(color="#0f172a", size=10.5, family="Arial, sans-serif"),
-        showline=False
+        showline=False,
+        fixedrange=True # <--- Locks X-axis against manual user zooming/scrolling
     )
 
     fig.update_layout(
@@ -712,7 +713,7 @@ if df_all is not None and not df_all.empty:
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
         font=dict(color="#1e293b", family="Arial, sans-serif"),
-        dragmode="pan",
+        dragmode=False, # <--- Disables dragging/panning
         hovermode="x unified",
         legend=dict(
             orientation="h",
@@ -729,10 +730,10 @@ if df_all is not None and not df_all.empty:
         fig,
         use_container_width=True,
         config={
-            "scrollZoom": True,
+            "scrollZoom": False, # <--- Disables scroll wheel zoom
             "displayModeBar": True,
             "displaylogo": False,
-            "modeBarButtonsToRemove": ["lasso2d", "select2d"]
+            "modeBarButtonsToRemove": ["zoom2d", "pan2d", "lasso2d", "select2d", "autoScale2d", "resetScale2d"]
         }
     )
 
