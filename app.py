@@ -6,6 +6,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
+import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title="Porto Pollo – Windguru Live Station",
@@ -69,14 +70,20 @@ def get_wg_badge(val):
     else:
         return "#f87171", "#ffffff"
 
+# PWA Meta tags + Streamlit padding reset
 st.markdown("""
+    <head>
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+        <meta name="mobile-web-app-capable" content="yes">
+    </head>
     <style>
-    /* Remove mobile container gutters to maximize chart width */
+    /* Maximize canvas on mobile */
     .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 1.5rem !important;
-        padding-left: 0.5rem !important;
-        padding-right: 0.5rem !important;
+        padding-top: 0.8rem !important;
+        padding-bottom: 1.2rem !important;
+        padding-left: 0.4rem !important;
+        padding-right: 0.4rem !important;
     }
     .stApp {
         background-color: #f8fafc;
@@ -89,20 +96,20 @@ st.markdown("""
         background: #ffffff;
         border: 1px solid #e2e8f0;
         border-radius: 8px;
-        padding: 6px 10px;
+        padding: 6px 8px;
         box-shadow: 0 1px 2px rgba(0,0,0,0.04);
         text-align: center;
         margin-bottom: 6px;
     }
     .wg-card-title {
-        font-size: 0.70rem;
+        font-size: 0.68rem;
         font-weight: 600;
         text-transform: uppercase;
         color: #64748b;
         margin-bottom: 2px;
     }
     .wg-card-val {
-        font-size: 1.25rem;
+        font-size: 1.2rem;
         font-weight: 700;
         font-family: monospace;
     }
@@ -113,8 +120,8 @@ st.markdown("""
         border: 1px solid #cbd5e1 !important;
         border-radius: 6px !important;
         font-weight: 600 !important;
-        padding: 4px 8px !important;
-        font-size: 0.82rem !important;
+        padding: 4px 6px !important;
+        font-size: 0.80rem !important;
         width: 100% !important;
     }
     div.stButton > button:hover {
@@ -126,15 +133,15 @@ st.markdown("""
     div[data-testid="stSelectbox"] label p {
         color: #475569 !important;
         font-weight: 600 !important;
-        font-size: 0.78rem !important;
+        font-size: 0.75rem !important;
     }
     div[data-testid="stSelectbox"] div[role="combobox"] {
         background-color: #f1f5f9 !important;
         color: #0f172a !important;
         border-color: #cbd5e1 !important;
         border-radius: 6px !important;
-        min-height: 34px !important;
-        font-size: 0.85rem !important;
+        min-height: 32px !important;
+        font-size: 0.82rem !important;
     }
 
     .slider-month-pill {
@@ -155,7 +162,35 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🪁 Porto Pollo Live")
+header_col1, header_col2 = st.columns([3, 1])
+with header_col1:
+    st.markdown("<h3 style='margin:0; padding:0;'>🪁 Porto Pollo Live</h3>", unsafe_allow_html=True)
+with header_col2:
+    # Fullscreen JS trigger button
+    components.html("""
+        <button id="fsBtn" style="
+            width: 100%;
+            height: 32px;
+            background: #ffffff;
+            color: #0f172a;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.78rem;
+            cursor: pointer;
+        ">⛶ Fullscreen</button>
+        <script>
+            document.getElementById('fsBtn').addEventListener('click', function() {
+                var doc = window.parent.document.documentElement;
+                if (!window.parent.document.fullscreenElement) {
+                    if (doc.requestFullscreen) { doc.requestFullscreen(); }
+                    else if (doc.webkitRequestFullscreen) { doc.webkitRequestFullscreen(); }
+                } else {
+                    if (window.parent.document.exitFullscreen) { window.parent.document.exitFullscreen(); }
+                }
+            });
+        </script>
+    """, height=38)
 
 @st.cache_data(ttl=60, show_spinner=False)
 def load_all_records(csv_path):
@@ -184,7 +219,7 @@ if df_all is not None and not df_all.empty:
     gust_bg, gust_fg = get_wg_badge(latest['raffica_knots'])
     temp_val = latest.get("temperatura_c")
 
-    # Mobile-friendly 3 + 2 KPI Grid
+    # Mobile 3 + 2 KPI Grid
     kpi_row1 = st.columns(3)
     with kpi_row1[0]:
         st.markdown(f"""<div class="wg-card">
@@ -226,16 +261,16 @@ if df_all is not None and not df_all.empty:
 
     if "window_end_time" not in st.session_state:
         st.session_state.window_end_time = t_global_max.to_pydatetime()
+    # Set 12h as default window span
     if "window_span_hours" not in st.session_state:
-        st.session_state.window_span_hours = 24
+        st.session_state.window_span_hours = 12
 
-    # Compact 2-tier mobile controls
     ctrl_row1 = st.columns([1.2, 1, 1])
     with ctrl_row1[0]:
         st.session_state.window_span_hours = st.selectbox(
             "Width:",
             options=[6, 12, 24, 72, 168, 720],
-            index=2,
+            index=1,  # Index 1 corresponds to 12 Hours
             format_func=lambda h: f"{h}h" if h < 24 else f"{h//24}d"
         )
     with ctrl_row1[1]:
@@ -418,7 +453,6 @@ if df_all is not None and not df_all.empty:
     if has_temp:
         subplot_titles_list.append("<b>Temp (°C)</b>")
 
-    # Wind speed takes maximum vertical proportion (~68% on mobile)
     fig = make_subplots(
         rows=3 if has_temp else 2,
         cols=1,
@@ -583,7 +617,7 @@ if df_all is not None and not df_all.empty:
         hovertemplate="<b>Dir:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft<extra></extra>"
     ), row=2, col=1)
 
-    # Subplot 2: Direction Arrows (reduced density for small displays)
+    # Subplot 2: Direction Arrows
     df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
@@ -640,7 +674,7 @@ if df_all is not None and not df_all.empty:
             opacity=0.9
         )
 
-    # Subplot 3: Temperature (Segmented Lines: Day Yellow, Night 19-06h Dark Blue)
+    # Subplot 3: Temperature (Yellow during Day, Dark Blue during Night)
     if has_temp:
         m_size = 2.5
         l_width = 1.8
