@@ -41,16 +41,16 @@ def deg_to_cardinal(deg):
     ix = int(round(deg / (360.0 / len(dirs)))) % len(dirs)
     return dirs[ix]
 
-# Ultra-smooth Windguru Color Scale
+# Continuous Beaufort Color Scale for Horizontal Area Fill
 WIND_COLORSCALE_SMOOTH = [
-    [0.00, "#f8fafc"],
-    [0.12, "#e0f2fe"],
-    [0.25, "#7dd3fc"],
-    [0.40, "#38bdf8"],
-    [0.55, "#4ade80"],
-    [0.70, "#facc15"],
-    [0.85, "#c084fc"],
-    [1.00, "#f87171"]
+    [0.00, "#ffffff"],  # 0 Bft
+    [0.12, "#e0f2fe"],  # 1 Bft
+    [0.25, "#7dd3fc"],  # 2-3 Bft
+    [0.40, "#38bdf8"],  # 4 Bft
+    [0.55, "#4ade80"],  # 5 Bft
+    [0.70, "#facc15"],  # 6 Bft
+    [0.85, "#c084fc"],  # 7 Bft
+    [1.00, "#f87171"]   # 8+ Bft
 ]
 
 def get_wg_badge(val):
@@ -226,7 +226,7 @@ if df_all is not None and not df_all.empty:
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 24
 
-    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns([1, 1, 1.3, 1.2, 1, 1])
+    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6, ctrl_col7 = st.columns([1, 1, 1.3, 1.2, 1, 1, 1])
     with ctrl_col1:
         if st.button("◀ -1 Day"):
             st.session_state.window_end_time = max(
@@ -258,6 +258,13 @@ if df_all is not None and not df_all.empty:
             )
             st.rerun()
     with ctrl_col6:
+        if st.button("+1 Day ▶"):
+            st.session_state.window_end_time = min(
+                t_global_max.to_pydatetime(),
+                st.session_state.window_end_time + datetime.timedelta(days=1)
+            )
+            st.rerun()
+    with ctrl_col7:
         if st.button("🔴 Live Latest"):
             st.session_state.window_end_time = t_global_max.to_pydatetime()
             st.rerun()
@@ -336,7 +343,6 @@ if df_all is not None and not df_all.empty:
 
     has_temp = "temperatura_c" in df_slice.columns and df_slice["temperatura_c"].notnull().any()
     df_plot_lines = df_slice.sort_values("timestamp").reset_index(drop=True)
-    df_plot_lines["raffica_plot_y"] = pd.to_numeric(df_plot_lines["raffica_plot_y"], errors="coerce")
 
     max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
     top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
@@ -417,39 +423,37 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    t_first = df_plot_lines["timestamp"].min()
-    t_last = df_plot_lines["timestamp"].max()
-
-    # --- ULTRA-HIGH RESOLUTION SMOOTH MESH HEATMAP WITH zsmooth='best' ---
-    num_x = 800
-    x_grid = pd.date_range(start=v_start, end=v_end, periods=num_x)
-    num_y = 200
-    y_levels = np.linspace(0, top_y_limit, num_y)
+    # --- TRUE CONTINUOUS 2D HORIZONTAL GRADIENT SURFACE ---
+    y_levels = np.linspace(0, top_y_limit, 200)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
-
-    df_temp_interp = df_plot_lines.set_index("timestamp")[["raffica_plot_y"]]
-    all_idx = df_temp_interp.index.union(x_grid)
-    df_interp = df_temp_interp.reindex(all_idx).interpolate(method="time").reindex(x_grid)
-    gust_y_grid = pd.to_numeric(df_interp["raffica_plot_y"], errors="coerce").to_numpy()
-
-    z_mesh = np.full((num_y, num_x), np.nan)
-    for c, t_val in enumerate(x_grid):
-        if t_first <= t_val <= t_last:
-            limit_y = gust_y_grid[c]
-            if not np.isnan(limit_y):
-                mask_col = y_levels <= limit_y
-                z_mesh[mask_col, c] = bft_levels[mask_col]
+    z_gradient = np.tile(bft_levels, (2, 1)).T
 
     fig.add_trace(go.Heatmap(
-        x=x_grid,
+        x=[v_start, v_end],
         y=y_levels,
-        z=z_mesh,
+        z=z_gradient,
         colorscale=WIND_COLORSCALE_SMOOTH,
         zmin=0,
         zmax=8,
-        zsmooth='best',  # <--- Browser-level bilinear interpolation removes columns on zoom!
+        zsmooth='best',
         showscale=False,
         hoverinfo="skip"
+    ), row=1, col=1)
+
+    # --- INVERTED MASK: BLOCKS OUT EVERYTHING ABOVE GUST LINE ---
+    x_mask = [v_start] + list(df_plot_lines["timestamp"]) + [v_end, v_end, v_start]
+    y_mask = [df_plot_lines["raffica_plot_y"].iloc[0]] + list(df_plot_lines["raffica_plot_y"]) + [
+        df_plot_lines["raffica_plot_y"].iloc[-1], top_y_limit * 1.05, top_y_limit * 1.05
+    ]
+
+    fig.add_trace(go.Scatter(
+        x=x_mask,
+        y=y_mask,
+        fill="toself",
+        fillcolor="#ffffff",
+        line=dict(color="rgba(255, 255, 255, 0)", width=0),
+        hoverinfo="skip",
+        showlegend=False
     ), row=1, col=1)
 
     # Subplot 1: Gust Trace
@@ -707,7 +711,8 @@ if df_all is not None and not df_all.empty:
         dtick=dtick_val,
         tickformat=tick_format_str,
         tickfont=dict(color="#0f172a", size=10.5, family="Arial, sans-serif"),
-        showline=False
+        showline=False,
+        fixedrange=True
     )
 
     fig.update_layout(
@@ -715,7 +720,7 @@ if df_all is not None and not df_all.empty:
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
         font=dict(color="#1e293b", family="Arial, sans-serif"),
-        dragmode="pan",
+        dragmode=False,
         hovermode="x unified",
         legend=dict(
             orientation="h",
@@ -732,10 +737,10 @@ if df_all is not None and not df_all.empty:
         fig,
         use_container_width=True,
         config={
-            "scrollZoom": True,
+            "scrollZoom": False,
             "displayModeBar": True,
             "displaylogo": False,
-            "modeBarButtonsToRemove": ["lasso2d", "select2d"]
+            "modeBarButtonsToRemove": ["zoom2d", "pan2d", "lasso2d", "select2d", "autoScale2d", "resetScale2d"]
         }
     )
 
