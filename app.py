@@ -410,10 +410,11 @@ if df_all is not None and not df_all.empty:
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
 
+    # Unlink shared_xaxes to allow top-side custom ticks on row 1
     fig = make_subplots(
         rows=3 if has_temp else 2,
         cols=1,
-        shared_xaxes=True,
+        shared_xaxes=False,
         vertical_spacing=0.035,
         subplot_titles=(
             "<b>Wind speed and gusts (Stretched Beaufort Scale)</b>",
@@ -577,7 +578,7 @@ if df_all is not None and not df_all.empty:
             ax=-dx,
             ay=dy,
             axref="pixel",
-            ayref="pixel",
+            axref="pixel",
             showarrow=True,
             arrowhead=2,
             arrowsize=2,
@@ -688,7 +689,6 @@ if df_all is not None and not df_all.empty:
         row=2, col=1
     )
 
-    # Dynamic format string for time + day/date on top
     if span_h >= 720:
         dtick_val = 24 * 3600 * 1000
         tick_format_str = "%a %d.%m."
@@ -705,7 +705,7 @@ if df_all is not None and not df_all.empty:
         dtick_val = 1 * 3600 * 1000
         tick_format_str = "%H:%M"
 
-    # Move x-axis labels to the top of the wind graph (Row 1) including time + day
+    # Configure top X-axis (Row 1) with side='top' to display times & dates clearly
     fig.update_xaxes(
         range=[v_start, v_end],
         gridcolor="#cbd5e1",
@@ -719,7 +719,7 @@ if df_all is not None and not df_all.empty:
         row=1, col=1
     )
 
-    # Hide tick labels for lower subplots
+    # Configure lower X-axes to match range and stay hidden
     for r in range(2, (4 if has_temp else 3)):
         fig.update_xaxes(
             range=[v_start, v_end],
