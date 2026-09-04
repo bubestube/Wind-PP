@@ -764,7 +764,7 @@ if df_all is not None and not df_all.empty:
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=1.02,
+            y=1.14,
             xanchor="right",
             x=1,
             bgcolor="rgba(255, 255, 255, 0.9)"
