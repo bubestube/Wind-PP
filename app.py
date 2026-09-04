@@ -356,15 +356,16 @@ if df_all is not None and not df_all.empty:
     min_slider = (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime()
     max_slider = t_global_max.to_pydatetime()
 
+    # Reduced density after 1 day (72h, 168h, 720h)
     if span_h >= 720:
-        slider_freq = "2h"
-        resample_rule = "2h"
+        slider_freq = "3h"
+        resample_rule = "3h"
     elif span_h >= 168:
+        slider_freq = "1h"
+        resample_rule = "1h"
+    elif span_h >= 72:
         slider_freq = "30min"
         resample_rule = "30min"
-    elif span_h >= 72:
-        slider_freq = "20min"
-        resample_rule = "20min"
     else:
         slider_freq = "15min"
         resample_rule = None
@@ -428,7 +429,7 @@ if df_all is not None and not df_all.empty:
     max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
     top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
 
-    # Dynamic Labels & Arrow Vectors
+    # Dynamic Labels & Arrow Vectors with higher sparsity when span > 24h
     speed_labels = [""] * len(df_plot_lines)
     gust_labels = [""] * len(df_plot_lines)
     labeled_speed_points = []
@@ -440,7 +441,7 @@ if df_all is not None and not df_all.empty:
         f_idx = valid_indices[0]
         v0 = df_plot_lines.loc[f_idx, 'velocita_knots']
         d0 = df_plot_lines.loc[f_idx, 'direzione_deg']
-        speed_labels[f_idx] = f"{v0:.1f}"
+        speed_labels[f_idx] = f"{v0:.0f}" if span_h > 24 else f"{v0:.1f}"
         labeled_speed_points.append({
             "timestamp": df_plot_lines.loc[f_idx, 'timestamp'],
             "velocita_plot_y": df_plot_lines.loc[f_idx, 'velocita_plot_y'],
@@ -458,12 +459,13 @@ if df_all is not None and not df_all.empty:
         y_arr = df_plot_lines["velocita_plot_y"].to_numpy()
         t_arr = df_plot_lines["timestamp"].to_numpy()
 
+        # Raised minimum steps and thresholds for multi-day views
         if span_h >= 720:
-            min_pts_step, max_pts_step, delta_threshold = 12, 35, 4.5
+            min_pts_step, max_pts_step, delta_threshold = 16, 45, 6.0
         elif span_h >= 168:
-            min_pts_step, max_pts_step, delta_threshold = 8, 24, 3.0
+            min_pts_step, max_pts_step, delta_threshold = 12, 32, 4.5
         elif span_h >= 72:
-            min_pts_step, max_pts_step, delta_threshold = 5, 16, 2.5
+            min_pts_step, max_pts_step, delta_threshold = 8, 22, 3.5
         else:
             min_pts_step, max_pts_step, delta_threshold = 3, 10, 1.5
 
@@ -473,7 +475,7 @@ if df_all is not None and not df_all.empty:
             pts_since_s = idx - last_s_idx
 
             if (delta_s >= delta_threshold and pts_since_s >= min_pts_step) or pts_since_s >= max_pts_step:
-                speed_labels[idx] = f"{curr_v:.0f}"
+                speed_labels[idx] = f"{curr_v:.0f}" if span_h > 24 else f"{curr_v:.1f}"
                 labeled_speed_points.append({
                     "timestamp": t_arr[idx],
                     "velocita_plot_y": y_arr[idx],
@@ -485,7 +487,7 @@ if df_all is not None and not df_all.empty:
                 delta_g = abs(curr_g - last_g_val)
                 pts_since_g = idx - last_g_idx
                 if (delta_g >= delta_threshold and pts_since_g >= min_pts_step) or pts_since_g >= max_pts_step:
-                    gust_labels[idx] = f"{curr_g:.0f}"
+                    gust_labels[idx] = f"{curr_g:.0f}" if span_h > 24 else f"{curr_g:.1f}"
                     last_g_val, last_g_idx = curr_g, idx
 
     df_plot_lines["speed_label"] = speed_labels
@@ -586,19 +588,24 @@ if df_all is not None and not df_all.empty:
 
         day_cursor += pd.Timedelta(days=1)
 
+    # Dynamic trace sizing based on span
+    line_w = 1.3 if span_h > 24 else 2.0
+    gust_w = 1.1 if span_h > 24 else 1.4
+    marker_sz = 2.0 if span_h > 24 else 3.0
+
     # Subplot 1: Gust Trace
     fig.add_trace(go.Scatter(
         x=df_plot_lines["timestamp"],
         y=df_plot_lines["raffica_plot_y"],
         text=df_plot_lines["gust_label"],
         textposition="top center",
-        textfont=dict(family="Arial, sans-serif", size=9.0, color="#b91c1c"),
+        textfont=dict(family="Arial, sans-serif", size=8.5 if span_h > 24 else 9.0, color="#b91c1c"),
         customdata=np.stack((df_plot_lines["raffica_bft"], df_plot_lines["raffica_knots"]), axis=-1),
         mode="lines+markers+text",
         name="Gust",
         connectgaps=True,
-        line=dict(color="#0f172a", width=1.4, dash="dot"),
-        marker=dict(symbol="circle", size=3.0, color="#0f172a"),
+        line=dict(color="#0f172a", width=gust_w, dash="dot"),
+        marker=dict(symbol="circle", size=marker_sz, color="#0f172a"),
         hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=1, col=1)
 
@@ -608,18 +615,18 @@ if df_all is not None and not df_all.empty:
         y=df_plot_lines["velocita_plot_y"],
         text=df_plot_lines["speed_label"],
         textposition="bottom center",
-        textfont=dict(family="Arial, sans-serif", size=9.0, color="#0f172a"),
+        textfont=dict(family="Arial, sans-serif", size=8.5 if span_h > 24 else 9.0, color="#0f172a"),
         customdata=np.stack((df_plot_lines["velocita_bft"], df_plot_lines["velocita_knots"], df_plot_lines["direzione_deg"]), axis=-1),
         mode="lines+markers+text",
         name="Speed",
         connectgaps=True,
-        line=dict(color="#0f172a", width=2.0),
-        marker=dict(size=3.0, color="#0f172a"),
+        line=dict(color="#0f172a", width=line_w),
+        marker=dict(size=marker_sz, color="#0f172a"),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
     # Stemmed mini vector arrows
-    mini_arrow_len = 16
+    mini_arrow_len = 14 if span_h > 24 else 16
     for pt in labeled_speed_points:
         deg = pt["direzione_deg"]
         if pd.isna(deg) or pd.isna(pt["velocita_plot_y"]):
@@ -634,15 +641,15 @@ if df_all is not None and not df_all.empty:
             y=pt["velocita_plot_y"],
             xref="x1",
             yref="y1",
-            yshift=-20,
+            yshift=-18 if span_h > 24 else -20,
             ax=-dx,
             ay=dy,
             axref="pixel",
             ayref="pixel",
             showarrow=True,
             arrowhead=2,
-            arrowsize=1.2,
-            arrowwidth=1.2,
+            arrowsize=1.1 if span_h > 24 else 1.2,
+            arrowwidth=1.1 if span_h > 24 else 1.2,
             arrowcolor="#0f172a",
             opacity=0.9
         )
@@ -654,16 +661,16 @@ if df_all is not None and not df_all.empty:
         mode="markers",
         name="Dir",
         connectgaps=False,
-        marker=dict(symbol="circle", size=2.5, color="#64748b"),
+        marker=dict(symbol="circle", size=2.0 if span_h > 24 else 2.5, color="#64748b"),
         customdata=df_plot_lines[["direzione_cardinal", "velocita_knots", "velocita_bft"]],
         hovertemplate="<b>Dir:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft<extra></extra>"
     ), row=2, col=1)
 
-    # Subplot 2: Direction Arrows (reduced density for small displays)
+    # Subplot 2: Direction Arrows (stricter target count on multi-day spans)
     df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
-    target_arrow_count = 10 if span_h >= 720 else (14 if span_h >= 72 else 18)
+    target_arrow_count = 8 if span_h >= 720 else (10 if span_h >= 168 else (12 if span_h >= 72 else 18))
     steady_step = max(4, len(df_for_arrows) // target_arrow_count)
     selected_indices = []
     if not df_for_arrows.empty:
@@ -678,14 +685,14 @@ if df_all is not None and not df_all.empty:
             delta_deg = abs((curr_deg - last_deg + 180) % 360 - 180)
             points_since_last = i - last_idx
 
-            angle_sens = 45.0 if span_h >= 720 else 30.0
+            angle_sens = 50.0 if span_h >= 720 else (40.0 if span_h > 24 else 30.0)
             if delta_deg > angle_sens or points_since_last >= steady_step:
                 selected_indices.append(i)
                 last_idx = i
                 last_deg = curr_deg
 
     df_sub = df_for_arrows.iloc[selected_indices]
-    arrow_length_px = 28
+    arrow_length_px = 24 if span_h > 24 else 28
 
     for _, row_data in df_sub.iterrows():
         angle_deg = row_data["arrow_angle"]
@@ -710,16 +717,16 @@ if df_all is not None and not df_all.empty:
             ayref="pixel",
             showarrow=True,
             arrowhead=2,
-            arrowsize=1.6,
-            arrowwidth=1.3,
+            arrowsize=1.4 if span_h > 24 else 1.6,
+            arrowwidth=1.1 if span_h > 24 else 1.3,
             arrowcolor=arrow_color,
             opacity=0.9
         )
 
     # Subplot 3: Temperature (Segmented Lines: Day Yellow, Night 19-06h Dark Blue)
     if has_temp:
-        m_size = 2.5
-        l_width = 1.8
+        m_size = 2.0 if span_h > 24 else 2.5
+        temp_l_width = 1.4 if span_h > 24 else 1.8
 
         is_day_point = df_plot_lines["timestamp"].dt.hour.between(6, 18)
         point_colors = ["#eab308" if day else "#1e3a8a" for day in is_day_point]
@@ -753,7 +760,7 @@ if df_all is not None and not df_all.empty:
                 x=day_x,
                 y=day_y,
                 mode="lines",
-                line=dict(color="#eab308", width=l_width),
+                line=dict(color="#eab308", width=temp_l_width),
                 hoverinfo="skip",
                 showlegend=False
             ), row=3, col=1)
@@ -763,7 +770,7 @@ if df_all is not None and not df_all.empty:
                 x=night_x,
                 y=night_y,
                 mode="lines",
-                line=dict(color="#1e3a8a", width=l_width),
+                line=dict(color="#1e3a8a", width=temp_l_width),
                 hoverinfo="skip",
                 showlegend=False
             ), row=3, col=1)
