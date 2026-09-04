@@ -72,12 +72,12 @@ def get_wg_badge(val):
 
 st.markdown("""
     <style>
-    /* Remove mobile container gutters to maximize chart width */
+    /* Maximize canvas on mobile */
     .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 1.5rem !important;
-        padding-left: 0.5rem !important;
-        padding-right: 0.5rem !important;
+        padding-top: 0.8rem !important;
+        padding-bottom: 1.2rem !important;
+        padding-left: 0.4rem !important;
+        padding-right: 0.4rem !important;
     }
     .stApp {
         background-color: #f8fafc;
@@ -90,20 +90,20 @@ st.markdown("""
         background: #ffffff;
         border: 1px solid #e2e8f0;
         border-radius: 8px;
-        padding: 6px 10px;
+        padding: 6px 8px;
         box-shadow: 0 1px 2px rgba(0,0,0,0.04);
         text-align: center;
         margin-bottom: 6px;
     }
     .wg-card-title {
-        font-size: 0.70rem;
+        font-size: 0.68rem;
         font-weight: 600;
         text-transform: uppercase;
         color: #64748b;
         margin-bottom: 2px;
     }
     .wg-card-val {
-        font-size: 1.25rem;
+        font-size: 1.2rem;
         font-weight: 700;
         font-family: monospace;
     }
@@ -114,9 +114,10 @@ st.markdown("""
         border: 1px solid #cbd5e1 !important;
         border-radius: 6px !important;
         font-weight: 600 !important;
-        padding: 4px 8px !important;
-        font-size: 0.82rem !important;
+        padding: 4px 6px !important;
+        font-size: 0.78rem !important;
         width: 100% !important;
+        white-space: nowrap !important;
     }
     div.stButton > button:hover {
         background-color: #f8fafc !important;
@@ -127,15 +128,15 @@ st.markdown("""
     div[data-testid="stSelectbox"] label p {
         color: #475569 !important;
         font-weight: 600 !important;
-        font-size: 0.78rem !important;
+        font-size: 0.75rem !important;
     }
     div[data-testid="stSelectbox"] div[role="combobox"] {
         background-color: #f1f5f9 !important;
         color: #0f172a !important;
         border-color: #cbd5e1 !important;
         border-radius: 6px !important;
-        min-height: 34px !important;
-        font-size: 0.85rem !important;
+        min-height: 32px !important;
+        font-size: 0.82rem !important;
     }
 
     .slider-month-pill {
@@ -152,6 +153,22 @@ st.markdown("""
         margin-top: 4px;
         margin-bottom: 2px;
         box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }
+
+    /* Force horizontal alignment of buttons on mobile screens */
+    div[data-testid="stHorizontalBlock"]:has(.mobile-nav-btn) {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 4px !important;
+        margin-bottom: 4px !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.mobile-nav-btn) > div {
+        flex: 1 1 0px !important;
+        min-width: 0 !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.mobile-nav-btn) div[data-testid="stButton"] {
+        width: 100% !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -285,50 +302,52 @@ if df_all is not None and not df_all.empty:
     if "window_end_time" not in st.session_state:
         st.session_state.window_end_time = t_global_max.to_pydatetime()
     if "window_span_hours" not in st.session_state:
-        st.session_state.window_span_hours = 24
+        st.session_state.window_span_hours = 12
 
-    # Compact 2-tier mobile controls
-    ctrl_row1 = st.columns([1.2, 1, 1])
-    with ctrl_row1[0]:
-        st.session_state.window_span_hours = st.selectbox(
-            "Width:",
-            options=[6, 12, 24, 72, 168, 720],
-            index=2,
-            format_func=lambda h: f"{h}h" if h < 24 else f"{h//24}d"
-        )
-    with ctrl_row1[1]:
-        st.write("")
+    # Width selector
+    st.session_state.window_span_hours = st.selectbox(
+        "Window Width:",
+        options=[6, 12, 24, 72, 168, 720],
+        index=1,
+        format_func=lambda h: f"{h}h" if h < 24 else f"{h//24}d"
+    )
+
+    # Horizontal navigation button bar
+    btn_cols = st.columns(5)
+    with btn_cols[0]:
+        st.markdown('<div class="mobile-nav-btn"></div>', unsafe_allow_html=True)
         if st.button("◀ -1d"):
             st.session_state.window_end_time = max(
                 (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime(),
                 st.session_state.window_end_time - datetime.timedelta(days=1)
             )
             st.rerun()
-    with ctrl_row1[2]:
-        st.write("")
-        if st.button("+1d ▶"):
-            st.session_state.window_end_time = min(
-                t_global_max.to_pydatetime(),
-                st.session_state.window_end_time + datetime.timedelta(days=1)
-            )
-            st.rerun()
-
-    ctrl_row2 = st.columns([1, 1, 1.2])
-    with ctrl_row2[0]:
+    with btn_cols[1]:
+        st.markdown('<div class="mobile-nav-btn"></div>', unsafe_allow_html=True)
         if st.button("◀ -6h"):
             st.session_state.window_end_time = max(
                 (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime(),
                 st.session_state.window_end_time - datetime.timedelta(hours=6)
             )
             st.rerun()
-    with ctrl_row2[1]:
+    with btn_cols[2]:
+        st.markdown('<div class="mobile-nav-btn"></div>', unsafe_allow_html=True)
         if st.button("+6h ▶"):
             st.session_state.window_end_time = min(
                 t_global_max.to_pydatetime(),
                 st.session_state.window_end_time + datetime.timedelta(hours=6)
             )
             st.rerun()
-    with ctrl_row2[2]:
+    with btn_cols[3]:
+        st.markdown('<div class="mobile-nav-btn"></div>', unsafe_allow_html=True)
+        if st.button("+1d ▶"):
+            st.session_state.window_end_time = min(
+                t_global_max.to_pydatetime(),
+                st.session_state.window_end_time + datetime.timedelta(days=1)
+            )
+            st.rerun()
+    with btn_cols[4]:
+        st.markdown('<div class="mobile-nav-btn"></div>', unsafe_allow_html=True)
         if st.button("🔴 Live"):
             st.session_state.window_end_time = t_global_max.to_pydatetime()
             st.rerun()
@@ -476,7 +495,6 @@ if df_all is not None and not df_all.empty:
     if has_temp:
         subplot_titles_list.append("<b>Temp (°C)</b>")
 
-    # Wind speed takes maximum vertical proportion (~68% on mobile)
     fig = make_subplots(
         rows=3 if has_temp else 2,
         cols=1,
@@ -562,9 +580,9 @@ if df_all is not None and not df_all.empty:
                     fill="toself",
                     fillcolor="rgba(148, 163, 184, 0.22)",
                     line=dict(color="rgba(0,0,0,0)", width=0),
-                hoverinfo="skip",
-                showlegend=False
-            ), row=3, col=1)
+                    hoverinfo="skip",
+                    showlegend=False
+                ), row=3, col=1)
 
         day_cursor += pd.Timedelta(days=1)
 
