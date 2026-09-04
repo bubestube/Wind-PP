@@ -143,11 +143,12 @@ st.markdown("""
         background-color: #ffffff;
         border: 1px solid #cbd5e1;
         border-radius: 20px;
-        padding: 4px 12px;
-        font-size: 0.88rem;
+        padding: 4px 14px;
+        font-size: 0.90rem;
         font-weight: 600;
         color: #0f172a;
-        margin-bottom: 2px;
+        margin-bottom: 4px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
     }
     </style>
 """, unsafe_allow_html=True)
@@ -223,9 +224,9 @@ if df_all is not None and not df_all.empty:
     if "window_end_time" not in st.session_state:
         st.session_state.window_end_time = t_global_max.to_pydatetime()
     if "window_span_hours" not in st.session_state:
-        st.session_state.window_span_hours = 6
+        st.session_state.window_span_hours = 24
 
-    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns([1, 1, 1.3, 1.2, 1, 1])
+    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6, ctrl_col7 = st.columns([1, 1, 1.3, 1.2, 1, 1, 1])
     with ctrl_col1:
         if st.button("◀ -1 Day"):
             st.session_state.window_end_time = max(
@@ -244,7 +245,7 @@ if df_all is not None and not df_all.empty:
         st.session_state.window_span_hours = st.selectbox(
             "Window Width:",
             options=[6, 12, 24, 72, 168, 720],
-            index=0,
+            index=2,
             format_func=lambda h: f"{h} Hours" if h < 24 else f"{h//24} Day{'s' if h > 24 else ''}"
         )
     with ctrl_col4:
@@ -257,40 +258,62 @@ if df_all is not None and not df_all.empty:
             )
             st.rerun()
     with ctrl_col6:
+        if st.button("+1 Day ▶"):
+            st.session_state.window_end_time = min(
+                t_global_max.to_pydatetime(),
+                st.session_state.window_end_time + datetime.timedelta(days=1)
+            )
+            st.rerun()
+    with ctrl_col7:
         if st.button("🔴 Live Latest"):
             st.session_state.window_end_time = t_global_max.to_pydatetime()
             st.rerun()
 
-    cur_end_preview = pd.to_datetime(st.session_state.window_end_time)
-    cur_start_preview = cur_end_preview - pd.Timedelta(hours=st.session_state.window_span_hours)
-    if cur_start_preview.strftime("%B %Y") == cur_end_preview.strftime("%B %Y"):
-        active_month_str = cur_end_preview.strftime("%B %Y")
-    elif cur_start_preview.year == cur_end_preview.year:
-        active_month_str = f"{cur_start_preview.strftime('%B')} – {cur_end_preview.strftime('%B %Y')}"
-    else:
-        active_month_str = f"{cur_start_preview.strftime('%B %Y')} – {cur_end_preview.strftime('%B %Y')}"
+    span_h = st.session_state.window_span_hours
+    min_slider = (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime()
+    max_slider = t_global_max.to_pydatetime()
 
+    if span_h >= 720:
+        slider_freq = "2h"
+        resample_rule = "2h"
+    elif span_h >= 168:
+        slider_freq = "30min"
+        resample_rule = "30min"
+    elif span_h >= 72:
+        slider_freq = "20min"
+        resample_rule = "20min"
+    else:
+        slider_freq = "15min"
+        resample_rule = None
+
+    v_end = min(pd.to_datetime(st.session_state.window_end_time), t_global_max)
+    v_start = v_end - pd.Timedelta(hours=span_h)
+
+    date_header_str = f"{v_start.strftime('%a %d.%m. %H:%M')} – {v_end.strftime('%a %d.%m. %H:%M')}"
     st.markdown(
-        f'<div class="slider-month-pill">📅 <span>{active_month_str}</span></div>',
+        f'<div class="slider-month-pill">📅 <span><b>{date_header_str}</b></span> ({span_h}h View)</div>',
         unsafe_allow_html=True
     )
 
-    min_slider = (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime()
-    max_slider = t_global_max.to_pydatetime()
-
     if min_slider < max_slider:
-        selected_end = st.slider(
-            "Scroll Active Timeline Window:",
-            min_value=min_slider,
-            max_value=max_slider,
-            value=st.session_state.window_end_time,
-            format="DD.MM HH:mm",
-            step=datetime.timedelta(minutes=15)
-        )
-        st.session_state.window_end_time = selected_end
+        timeline_ticks = pd.date_range(start=min_slider, end=max_slider, freq=slider_freq).to_pydatetime().tolist()
+        if not timeline_ticks or timeline_ticks[-1] != max_slider:
+            timeline_ticks.append(max_slider)
 
-    v_end = pd.to_datetime(st.session_state.window_end_time)
-    v_start = v_end - pd.Timedelta(hours=st.session_state.window_span_hours)
+        curr_target = min(max_slider, max(min_slider, st.session_state.window_end_time))
+        closest_idx = int(np.argmin([abs((t - curr_target).total_seconds()) for t in timeline_ticks]))
+
+        selected_slider_idx = st.select_slider(
+            "Scroll Active Timeline Window:",
+            options=range(len(timeline_ticks)),
+            value=closest_idx,
+            format_func=lambda idx: timeline_ticks[idx].strftime("%a %d.%m. %H:%M")
+        )
+
+        chosen_dt = timeline_ticks[selected_slider_idx]
+        if abs((chosen_dt - st.session_state.window_end_time).total_seconds()) > 60:
+            st.session_state.window_end_time = chosen_dt
+            st.rerun()
 
     df_slice = df_all[(df_all["timestamp"] >= v_start) & (df_all["timestamp"] <= v_end)].copy()
 
@@ -300,16 +323,6 @@ if df_all is not None and not df_all.empty:
     if df_slice.empty:
         st.warning("No records in selected window.")
         df_slice = df_all.tail(20).copy()
-
-    span_h = st.session_state.window_span_hours
-    if span_h >= 720:
-        resample_rule = "2h"
-    elif span_h >= 168:
-        resample_rule = "30min"
-    elif span_h >= 72:
-        resample_rule = "20min"
-    else:
-        resample_rule = None
 
     if resample_rule is not None and not df_slice.empty:
         df_agg = df_slice.set_index("timestamp").resample(resample_rule).agg({
@@ -331,7 +344,6 @@ if df_all is not None and not df_all.empty:
     has_temp = "temperatura_c" in df_slice.columns and df_slice["temperatura_c"].notnull().any()
     df_plot_lines = df_slice.sort_values("timestamp").reset_index(drop=True)
 
-    # Upper boundary limit for plot area and masking
     max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
     top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
 
@@ -398,25 +410,44 @@ if df_all is not None and not df_all.empty:
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
 
-    # 5. Multi-Panel Subplots
+    subplot_titles_list = ["", "<b>Wind direction</b>"]
+    if has_temp:
+        subplot_titles_list.append("<b>Temperature (°C)</b>")
+
     fig = make_subplots(
         rows=3 if has_temp else 2,
         cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.035,
-        subplot_titles=(
-            f"<b>Wind speed and gusts (Stretched Beaufort Scale) – {v_start.strftime('%d.%m %H:%M')} to {v_end.strftime('%d.%m %H:%M')}</b>",
-            "<b>Wind direction</b>",
-            "<b>Temperature (°C) – 🟡 Daytime (06-19h) | 🔵 Nighttime (19-06h)</b>" if has_temp else None
-        ),
+        shared_xaxes=False,
+        vertical_spacing=0.038,
+        subplot_titles=tuple(subplot_titles_list),
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
+    # --- NIGHTTIME SHADING (Overlay boxes via fig.add_vrect) ---
+    num_rows_total = 3 if has_temp else 2
+    day_cursor = v_start.floor("D")
+    while day_cursor <= v_end + pd.Timedelta(days=2):
+        night_start = day_cursor + pd.Timedelta(hours=19)
+        night_end = day_cursor + pd.Timedelta(days=1, hours=6)
+        if night_start < v_end and night_end > v_start:
+            x_left = max(night_start, v_start)
+            x_right = min(night_end, v_end)
+            for r_idx in range(1, num_rows_total + 1):
+                fig.add_vrect(
+                    x0=x_left,
+                    x1=x_right,
+                    fillcolor="#f1f5f9",
+                    opacity=0.9,
+                    line_width=0,
+                    row=r_idx,
+                    col=1
+                )
+        day_cursor += pd.Timedelta(days=1)
+
     # --- TRUE CONTINUOUS 2D HORIZONTAL GRADIENT SURFACE ---
-    # Construct a continuous 2D vertical gradient mesh spanning v_start to v_end
-    y_levels = np.linspace(0, top_y_limit, 45)
+    y_levels = np.linspace(0, top_y_limit, 200)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
-    z_gradient = np.tile(bft_levels, (2, 1)).T  # (n_y, 2) mesh
+    z_gradient = np.tile(bft_levels, (2, 1)).T
 
     fig.add_trace(go.Heatmap(
         x=[v_start, v_end],
@@ -425,12 +456,12 @@ if df_all is not None and not df_all.empty:
         colorscale=WIND_COLORSCALE_SMOOTH,
         zmin=0,
         zmax=8,
+        zsmooth='best',
         showscale=False,
         hoverinfo="skip"
     ), row=1, col=1)
 
     # --- INVERTED MASK: BLOCKS OUT EVERYTHING ABOVE GUST LINE ---
-    # Creates an opaque ceiling mask in background white, exposing only the gradient below the gust curve
     x_mask = [v_start] + list(df_plot_lines["timestamp"]) + [v_end, v_end, v_start]
     y_mask = [df_plot_lines["raffica_plot_y"].iloc[0]] + list(df_plot_lines["raffica_plot_y"]) + [
         df_plot_lines["raffica_plot_y"].iloc[-1], top_y_limit * 1.05, top_y_limit * 1.05
@@ -478,7 +509,7 @@ if df_all is not None and not df_all.empty:
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
-    # Subplot 1: Exact Angulation Stemmed Vector Arrows
+    # Stemmed mini vector arrows
     mini_arrow_len = 18
     for pt in labeled_speed_points:
         deg = pt["direzione_deg"]
@@ -519,7 +550,7 @@ if df_all is not None and not df_all.empty:
         hovertemplate="<b>Direction:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=2, col=1)
 
-    # Subplot 2: Direction Arrows Throttled to Match Horizon
+    # Subplot 2: Direction Arrows
     df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
@@ -555,7 +586,6 @@ if df_all is not None and not df_all.empty:
             continue
 
         arrow_color = "#16a34a" if (pd.notnull(speed_val) and speed_val >= 18.0) else "#dc2626"
-
         rad = math.radians(angle_deg)
         dx = arrow_length_px * math.sin(rad)
         dy = arrow_length_px * math.cos(rad)
@@ -590,7 +620,7 @@ if df_all is not None and not df_all.empty:
             name="Temp (Day: 06-19h)",
             connectgaps=False,
             line=dict(color="#eab308", width=1.8 if span_h >= 720 else 2.2),
-            marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#eab308", line=dict(color="#ca8a04", width=1)),
+            marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#eab308"),
             hovertemplate="<b>Temp (Day):</b> %{y:.1f} °C<extra></extra>"
         ), row=3, col=1)
 
@@ -602,7 +632,7 @@ if df_all is not None and not df_all.empty:
                 name="Temp (Night: 19-06h)",
                 connectgaps=False,
                 line=dict(color="#1e3a8a", width=1.8 if span_h >= 720 else 2.2),
-                marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#1e3a8a", line=dict(color="#0f172a", width=1)),
+                marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#1e3a8a"),
                 hovertemplate="<b>Temp (Night):</b> %{y:.1f} °C<extra></extra>"
             ), row=3, col=1)
 
@@ -616,23 +646,33 @@ if df_all is not None and not df_all.empty:
             row=3, col=1
         )
 
-    # Night Shading across Active Slice Window
-    if not daytime_only and not df_plot_lines.empty:
-        t_slice_min = df_plot_lines["timestamp"].min()
-        t_slice_max = df_plot_lines["timestamp"].max()
-        curr_day = t_slice_min.floor("D")
-        while curr_day <= t_slice_max:
-            night_start = curr_day + pd.Timedelta(hours=19)
-            night_end = curr_day + pd.Timedelta(days=1, hours=6)
-            if night_end >= t_slice_min and night_start <= t_slice_max:
-                fig.add_vrect(
-                    x0=max(night_start, t_slice_min),
-                    x1=min(night_end, t_slice_max),
-                    fillcolor="rgba(15, 23, 42, 0.04)",
-                    layer="below",
-                    line_width=0
-                )
-            curr_day += pd.Timedelta(days=1)
+    # Windguru Midnight Date Dividers & In-Graph Date Headers
+    day_cursor = v_start.floor("D")
+    while day_cursor <= v_end + pd.Timedelta(days=1):
+        midnight = day_cursor
+        if v_start <= midnight <= v_end:
+            fig.add_vline(
+                x=midnight,
+                line_width=1.2,
+                line_dash="dash",
+                line_color="#64748b",
+                opacity=0.6
+            )
+            fig.add_annotation(
+                x=midnight + pd.Timedelta(hours=1),
+                y=top_y_limit * 0.96,
+                xref="x1",
+                yref="y1",
+                text=f"<b>{midnight.strftime('%a %d %b')}</b>",
+                showarrow=False,
+                font=dict(size=10, color="#334155"),
+                bgcolor="rgba(255, 255, 255, 0.85)",
+                bordercolor="#cbd5e1",
+                borderwidth=1,
+                borderpad=2,
+                xanchor="left"
+            )
+        day_cursor += pd.Timedelta(days=1)
 
     # Axis Calibrations
     bft_ticks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
@@ -642,7 +682,6 @@ if df_all is not None and not df_all.empty:
         "5 Bft (Fresh)", "6 Bft (Strong)", "7 Bft (Near Gale)", "8 Bft (Gale)", "9 Bft (Storm)"
     ]
 
-    # Subplot 1 Y-Axis: Beaufort Force
     fig.update_yaxes(
         title_text="<b>Beaufort Force (Stretched)</b>",
         title_font=dict(color="#0f172a", size=12),
@@ -657,7 +696,6 @@ if df_all is not None and not df_all.empty:
         row=1, col=1
     )
 
-    # Subplot 2 Y-Axis: Direction
     fig.update_yaxes(
         title_text="<b>Direction</b>",
         title_font=dict(color="#0f172a", size=12),
@@ -671,12 +709,51 @@ if df_all is not None and not df_all.empty:
         row=2, col=1
     )
 
+    if span_h >= 720:
+        dtick_val = 24 * 3600 * 1000
+        tick_format_str = "%a %d.%m."
+    elif span_h >= 168:
+        dtick_val = 6 * 3600 * 1000
+        tick_format_str = "%H:%M<br>%a %d"
+    elif span_h >= 72:
+        dtick_val = 3 * 3600 * 1000
+        tick_format_str = "%H:%M<br>%a %d"
+    elif span_h >= 24:
+        dtick_val = 2 * 3600 * 1000
+        tick_format_str = "%H:%M<br>%a %d"
+    else:
+        dtick_val = 1 * 3600 * 1000
+        tick_format_str = "%H:%M"
+
     fig.update_xaxes(
+        range=[v_start, v_end],
         gridcolor="#cbd5e1",
         showgrid=True,
-        range=[v_start, v_end],
-        tickfont=dict(color="#0f172a", size=11),
-        showline=False
+        dtick=dtick_val,
+        tickformat=tick_format_str,
+        tickfont=dict(color="#0f172a", size=10, family="Arial, sans-serif"),
+        showline=False,
+        fixedrange=True,
+        side="top",
+        row=1, col=1
+    )
+
+    for r in range(2, (4 if has_temp else 3)):
+        fig.update_xaxes(
+            range=[v_start, v_end],
+            showticklabels=False,
+            fixedrange=True,
+            row=r, col=1
+        )
+
+    # Center the wind speed and gusts title horizontally at the top
+    fig.add_annotation(
+        xref="paper", yref="paper",
+        x=0.5, y=1.07,
+        text="<b>Wind speed and gusts (Stretched Beaufort Scale)</b>",
+        showarrow=False,
+        font=dict(size=13, color="#0f172a", family="Arial, sans-serif"),
+        xanchor="center", yanchor="bottom"
     )
 
     fig.update_layout(
@@ -684,7 +761,7 @@ if df_all is not None and not df_all.empty:
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
         font=dict(color="#1e293b", family="Arial, sans-serif"),
-        dragmode="pan",
+        dragmode=False,
         hovermode="x unified",
         legend=dict(
             orientation="h",
@@ -694,17 +771,17 @@ if df_all is not None and not df_all.empty:
             x=1,
             bgcolor="rgba(255, 255, 255, 0.9)"
         ),
-        margin=dict(l=35, r=20, t=50, b=30)
+        margin=dict(l=35, r=20, t=65, b=30)
     )
 
     st.plotly_chart(
         fig,
         use_container_width=True,
         config={
-            "scrollZoom": True,
+            "scrollZoom": False,
             "displayModeBar": True,
             "displaylogo": False,
-            "modeBarButtonsToRemove": ["lasso2d", "select2d"]
+            "modeBarButtonsToRemove": ["zoom2d", "pan2d", "lasso2d", "select2d", "autoScale2d", "resetScale2d"]
         }
     )
 
