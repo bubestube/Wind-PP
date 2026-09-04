@@ -124,6 +124,18 @@ st.markdown("""
         border-radius: 6px !important;
     }
 
+    div[data-testid="stCheckbox"] {
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 6px !important;
+        padding: 5px 10px !important;
+        margin-top: 25px !important;
+    }
+    div[data-testid="stCheckbox"] label p {
+        color: #0f172a !important;
+        font-weight: 600 !important;
+    }
+
     .slider-month-pill {
         display: inline-flex;
         align-items: center;
@@ -214,7 +226,7 @@ if df_all is not None and not df_all.empty:
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 24
 
-    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns([1, 1, 1.3, 1, 1, 1])
+    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6, ctrl_col7 = st.columns([1, 1, 1.3, 1.2, 1, 1, 1])
     with ctrl_col1:
         if st.button("◀ -1 Day"):
             st.session_state.window_end_time = max(
@@ -237,20 +249,22 @@ if df_all is not None and not df_all.empty:
             format_func=lambda h: f"{h} Hours" if h < 24 else f"{h//24} Day{'s' if h > 24 else ''}"
         )
     with ctrl_col4:
+        daytime_only = st.checkbox("☀️ Daytime Only (06-19h)", value=False)
+    with ctrl_col5:
         if st.button("+6 Hours ▶"):
             st.session_state.window_end_time = min(
                 t_global_max.to_pydatetime(),
                 st.session_state.window_end_time + datetime.timedelta(hours=6)
             )
             st.rerun()
-    with ctrl_col5:
+    with ctrl_col6:
         if st.button("+1 Day ▶"):
             st.session_state.window_end_time = min(
                 t_global_max.to_pydatetime(),
                 st.session_state.window_end_time + datetime.timedelta(days=1)
             )
             st.rerun()
-    with ctrl_col6:
+    with ctrl_col7:
         if st.button("🔴 Live Latest"):
             st.session_state.window_end_time = t_global_max.to_pydatetime()
             st.rerun()
@@ -302,6 +316,9 @@ if df_all is not None and not df_all.empty:
             st.rerun()
 
     df_slice = df_all[(df_all["timestamp"] >= v_start) & (df_all["timestamp"] <= v_end)].copy()
+
+    if daytime_only:
+        df_slice = df_slice[df_slice["timestamp"].dt.hour.between(6, 18)].copy()
 
     if df_slice.empty:
         st.warning("No records in selected window.")
