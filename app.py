@@ -41,16 +41,16 @@ def deg_to_cardinal(deg):
     ix = int(round(deg / (360.0 / len(dirs)))) % len(dirs)
     return dirs[ix]
 
-# Ultra-smooth Windguru Color Scale
+# Continuous Beaufort Color Scale for Horizontal Area Fill
 WIND_COLORSCALE_SMOOTH = [
-    [0.00, "#f8fafc"],
-    [0.12, "#e0f2fe"],
-    [0.25, "#7dd3fc"],
-    [0.40, "#38bdf8"],
-    [0.55, "#4ade80"],
-    [0.70, "#facc15"],
-    [0.85, "#c084fc"],
-    [1.00, "#f87171"]
+    [0.00, "#ffffff"],  # 0 Bft
+    [0.12, "#e0f2fe"],  # 1 Bft
+    [0.25, "#7dd3fc"],  # 2-3 Bft
+    [0.40, "#38bdf8"],  # 4 Bft
+    [0.55, "#4ade80"],  # 5 Bft
+    [0.70, "#facc15"],  # 6 Bft
+    [0.85, "#c084fc"],  # 7 Bft
+    [1.00, "#f87171"]   # 8+ Bft
 ]
 
 def get_wg_badge(val):
@@ -288,6 +288,7 @@ if df_all is not None and not df_all.empty:
         unsafe_allow_html=True
     )
 
+    # Windguru Slider with Clean Weekday, Date & Time Formatter
     if min_slider < max_slider:
         timeline_ticks = pd.date_range(start=min_slider, end=max_slider, freq=slider_freq).to_pydatetime().tolist()
         if not timeline_ticks or timeline_ticks[-1] != max_slider:
@@ -336,7 +337,6 @@ if df_all is not None and not df_all.empty:
 
     has_temp = "temperatura_c" in df_slice.columns and df_slice["temperatura_c"].notnull().any()
     df_plot_lines = df_slice.sort_values("timestamp").reset_index(drop=True)
-    df_plot_lines["raffica_plot_y"] = pd.to_numeric(df_plot_lines["raffica_plot_y"], errors="coerce")
 
     max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
     top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
@@ -417,39 +417,36 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    t_first = df_plot_lines["timestamp"].min()
-    t_last = df_plot_lines["timestamp"].max()
-
-    # --- ULTRA-HIGH RESOLUTION SMOOTH MESH HEATMAP WITH zsmooth='best' ---
-    num_x = 800
-    x_grid = pd.date_range(start=v_start, end=v_end, periods=num_x)
-    num_y = 200
-    y_levels = np.linspace(0, top_y_limit, num_y)
+    # --- TRUE CONTINUOUS 2D HORIZONTAL GRADIENT SURFACE ---
+    y_levels = np.linspace(0, top_y_limit, 45)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
-
-    df_temp_interp = df_plot_lines.set_index("timestamp")[["raffica_plot_y"]]
-    all_idx = df_temp_interp.index.union(x_grid)
-    df_interp = df_temp_interp.reindex(all_idx).interpolate(method="time").reindex(x_grid)
-    gust_y_grid = pd.to_numeric(df_interp["raffica_plot_y"], errors="coerce").to_numpy()
-
-    z_mesh = np.full((num_y, num_x), np.nan)
-    for c, t_val in enumerate(x_grid):
-        if t_first <= t_val <= t_last:
-            limit_y = gust_y_grid[c]
-            if not np.isnan(limit_y):
-                mask_col = y_levels <= limit_y
-                z_mesh[mask_col, c] = bft_levels[mask_col]
+    z_gradient = np.tile(bft_levels, (2, 1)).T
 
     fig.add_trace(go.Heatmap(
-        x=x_grid,
+        x=[v_start, v_end],
         y=y_levels,
-        z=z_mesh,
+        z=z_gradient,
         colorscale=WIND_COLORSCALE_SMOOTH,
         zmin=0,
         zmax=8,
-        zsmooth='best',  # <--- Browser-level bilinear interpolation removes columns on zoom!
         showscale=False,
         hoverinfo="skip"
+    ), row=1, col=1)
+
+    # --- INVERTED MASK: BLOCKS OUT EVERYTHING ABOVE GUST LINE ---
+    x_mask = [v_start] + list(df_plot_lines["timestamp"]) + [v_end, v_end, v_start]
+    y_mask = [df_plot_lines["raffica_plot_y"].iloc[0]] + list(df_plot_lines["raffica_plot_y"]) + [
+        df_plot_lines["raffica_plot_y"].iloc[-1], top_y_limit * 1.05, top_y_limit * 1.05
+    ]
+
+    fig.add_trace(go.Scatter(
+        x=x_mask,
+        y=y_mask,
+        fill="toself",
+        fillcolor="#ffffff",
+        line=dict(color="rgba(255, 255, 255, 0)", width=0),
+        hoverinfo="skip",
+        showlegend=False
     ), row=1, col=1)
 
     # Subplot 1: Gust Trace
@@ -480,7 +477,7 @@ if df_all is not None and not df_all.empty:
         name="Wind Speed (Avg)",
         connectgaps=True,
         line=dict(color="#0f172a", width=1.8 if span_h >= 720 else 2.2),
-        marker=dict(size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
+        marker=dict(symbol="circle", size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
