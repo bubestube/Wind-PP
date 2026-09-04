@@ -761,14 +761,7 @@ if df_all is not None and not df_all.empty:
         font=dict(color="#1e293b", family="Arial, sans-serif"),
         dragmode=False,
         hovermode="x unified",
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.03,
-            xanchor="right",
-            x=0.82,
-            bgcolor="rgba(255, 255, 255, 0.9)"
-        ),
+        showlegend=False,
         margin=dict(l=35, r=20, t=65, b=30)
     )
 
