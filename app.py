@@ -423,30 +423,33 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # --- NIGHTTIME SHADING (Explicit Layout Shapes) ---
+    # --- NIGHTTIME SHADING (Bound to specific row y-axes) ---
     night_shapes = []
     day_cursor = v_start.floor("D")
+    num_rows_total = 3 if has_temp else 2
     while day_cursor <= v_end + pd.Timedelta(days=2):
         night_start = day_cursor + pd.Timedelta(hours=19)
         night_end = day_cursor + pd.Timedelta(days=1, hours=6)
         if night_start < v_end and night_end > v_start:
             x_left = max(night_start, v_start)
             x_right = min(night_end, v_end)
-            night_shapes.append(
-                dict(
-                    type="rect",
-                    xref="x",
-                    yref="paper",
-                    x0=x_left,
-                    x1=x_right,
-                    y0=0,
-                    y1=1,
-                    fillcolor="#f1f5f9",
-                    opacity=0.85,
-                    layer="below",
-                    line_width=0
+            for r_idx in range(1, num_rows_total + 1):
+                y_axis_name = "y" if r_idx == 1 else f"y{r_idx}"
+                night_shapes.append(
+                    dict(
+                        type="rect",
+                        xref="x",
+                        yref=y_axis_name,
+                        x0=x_left,
+                        x1=x_right,
+                        y0=0,
+                        y1=1 if r_idx > 1 else top_y_limit,
+                        fillcolor="#f1f5f9",
+                        opacity=0.85,
+                        layer="below",
+                        line_width=0
+                    )
                 )
-            )
         day_cursor += pd.Timedelta(days=1)
 
     # --- TRUE CONTINUOUS 2D HORIZONTAL GRADIENT SURFACE ---
@@ -510,7 +513,7 @@ if df_all is not None and not df_all.empty:
         name="Wind Speed (Avg)",
         connectgaps=True,
         line=dict(color="#0f172a", width=1.8 if span_h >= 720 else 2.2),
-        marker=dict(symbol="circle", size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
+        marker=dict(size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
@@ -768,7 +771,7 @@ if df_all is not None and not df_all.empty:
         font=dict(color="#1e293b", family="Arial, sans-serif"),
         dragmode=False,
         hovermode="x unified",
-        shapes=night_shapes, # <--- Injected explicit layout shapes for shading
+        shapes=night_shapes,
         legend=dict(
             orientation="h",
             yanchor="bottom",
