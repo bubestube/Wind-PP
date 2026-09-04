@@ -519,7 +519,7 @@ if df_all is not None and not df_all.empty:
         name="Wind Speed (Avg)",
         connectgaps=True,
         line=dict(color="#0f172a", width=1.8 if span_h >= 720 else 2.2),
-        marker=dict(size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
+        marker=dict(symbol="circle", size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
@@ -621,68 +621,16 @@ if df_all is not None and not df_all.empty:
             opacity=0.9
         )
 
-    # Subplot 3: Temperature (Segmented Lines: Day in Yellow, Night 19:00-06:00 in Dark Blue)
+    # Subplot 3: Temperature
     if has_temp:
-        m_size = 2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4)
-        l_width = 1.8 if span_h >= 720 else 2.2
-
-        is_day_point = df_plot_lines["timestamp"].dt.hour.between(6, 18)
-        point_colors = ["#eab308" if day else "#1e3a8a" for day in is_day_point]
-
-        t_series = df_plot_lines["timestamp"].to_numpy()
-        y_series = df_plot_lines["temperatura_c"].to_numpy()
-
-        day_x, day_y = [], []
-        night_x, night_y = [], []
-
-        for i in range(len(df_plot_lines) - 1):
-            t1 = pd.Timestamp(t_series[i])
-            t2 = pd.Timestamp(t_series[i + 1])
-            y1, y2 = y_series[i], y_series[i + 1]
-
-            if pd.isna(y1) or pd.isna(y2):
-                continue
-
-            # Check if segment midpoint is in night hours (19:00 - 05:59:59)
-            t_mid = t1 + (t2 - t1) / 2
-            is_segment_night = not (6 <= t_mid.hour < 19)
-
-            if is_segment_night:
-                night_x.extend([t1, t2, None])
-                night_y.extend([y1, y2, None])
-            else:
-                day_x.extend([t1, t2, None])
-                day_y.extend([y1, y2, None])
-
-        # Day connecting lines (Yellow)
-        if day_x:
-            fig.add_trace(go.Scatter(
-                x=day_x,
-                y=day_y,
-                mode="lines",
-                line=dict(color="#eab308", width=l_width),
-                hoverinfo="skip",
-                showlegend=False
-            ), row=3, col=1)
-
-        # Night connecting lines (Dark Blue)
-        if night_x:
-            fig.add_trace(go.Scatter(
-                x=night_x,
-                y=night_y,
-                mode="lines",
-                line=dict(color="#1e3a8a", width=l_width),
-                hoverinfo="skip",
-                showlegend=False
-            ), row=3, col=1)
-
-        # Discrete points with exact color per timestamp
         fig.add_trace(go.Scatter(
             x=df_plot_lines["timestamp"],
             y=df_plot_lines["temperatura_c"],
-            mode="markers",
+            mode="lines+markers",
             name="Temperature (°C)",
-            marker=dict(size=m_size, color=point_colors),
+            connectgaps=False,
+            line=dict(color="#eab308", width=1.8 if span_h >= 720 else 2.2),
+            marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#eab308"),
             hovertemplate="<b>Temp:</b> %{y:.1f} °C<extra></extra>"
         ), row=3, col=1)
 
