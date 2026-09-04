@@ -288,7 +288,6 @@ if df_all is not None and not df_all.empty:
         unsafe_allow_html=True
     )
 
-    # Windguru Slider with Clean Weekday, Date & Time Formatter
     if min_slider < max_slider:
         timeline_ticks = pd.date_range(start=min_slider, end=max_slider, freq=slider_freq).to_pydatetime().tolist()
         if not timeline_ticks or timeline_ticks[-1] != max_slider:
