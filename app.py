@@ -423,6 +423,22 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
+    # --- NIGHTTIME SHADING (19:00 to 06:00) ---
+    day_cursor = v_start.floor("D")
+    while day_cursor <= v_end + pd.Timedelta(days=2):
+        night_start = day_cursor + pd.Timedelta(hours=19)
+        night_end = day_cursor + pd.Timedelta(days=1, hours=6)
+        if night_start < v_end and night_end > v_start:
+            fig.add_vrect(
+                x0=max(night_start, v_start),
+                x1=min(night_end, v_end),
+                fillcolor="#f1f5f9",
+                opacity=0.85,
+                layer="below",
+                line_width=0
+            )
+        day_cursor += pd.Timedelta(days=1)
+
     # --- TRUE CONTINUOUS 2D HORIZONTAL GRADIENT SURFACE ---
     y_levels = np.linspace(0, top_y_limit, 200)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
