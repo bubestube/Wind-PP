@@ -440,7 +440,23 @@ if df_all is not None and not df_all.empty:
         hoverinfo="skip"
     ), row=1, col=1)
 
-    # --- TRANSPARENT NIGHT SHADING BOXES ABOVE THE WIND CURVE ---
+    # --- INVERTED MASK: BLOCKS OUT EVERYTHING ABOVE GUST LINE ---
+    x_mask = [v_start] + list(df_plot_lines["timestamp"]) + [v_end, v_end, v_start]
+    y_mask = [df_plot_lines["raffica_plot_y"].iloc[0]] + list(df_plot_lines["raffica_plot_y"]) + [
+        df_plot_lines["raffica_plot_y"].iloc[-1], top_y_limit * 1.05, top_y_limit * 1.05
+    ]
+
+    fig.add_trace(go.Scatter(
+        x=x_mask,
+        y=y_mask,
+        fill="toself",
+        fillcolor="#ffffff",
+        line=dict(color="rgba(255, 255, 255, 0)", width=0),
+        hoverinfo="skip",
+        showlegend=False
+    ), row=1, col=1)
+
+    # --- TRANSPARENT NIGHT SHADING BOXES ABOVE THE WIND CURVE (Rendered AFTER white mask) ---
     day_cursor = v_start.floor("D")
     while day_cursor <= v_end + pd.Timedelta(days=2):
         night_start = day_cursor + pd.Timedelta(hours=19)
@@ -461,29 +477,13 @@ if df_all is not None and not df_all.empty:
                     x=poly_x,
                     y=poly_y,
                     fill="toself",
-                    fillcolor="rgba(148, 163, 184, 0.18)",
+                    fillcolor="rgba(148, 163, 184, 0.22)",
                     line=dict(color="rgba(0,0,0,0)", width=0),
                     hoverinfo="skip",
                     showlegend=False
                 ), row=1, col=1)
 
         day_cursor += pd.Timedelta(days=1)
-
-    # --- INVERTED MASK: BLOCKS OUT EVERYTHING ABOVE GUST LINE ---
-    x_mask = [v_start] + list(df_plot_lines["timestamp"]) + [v_end, v_end, v_start]
-    y_mask = [df_plot_lines["raffica_plot_y"].iloc[0]] + list(df_plot_lines["raffica_plot_y"]) + [
-        df_plot_lines["raffica_plot_y"].iloc[-1], top_y_limit * 1.05, top_y_limit * 1.05
-    ]
-
-    fig.add_trace(go.Scatter(
-        x=x_mask,
-        y=y_mask,
-        fill="toself",
-        fillcolor="#ffffff",
-        line=dict(color="rgba(255, 255, 255, 0)", width=0),
-        hoverinfo="skip",
-        showlegend=False
-    ), row=1, col=1)
 
     # Subplot 1: Gust Trace
     fig.add_trace(go.Scatter(
