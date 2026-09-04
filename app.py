@@ -766,7 +766,7 @@ if df_all is not None and not df_all.empty:
             yanchor="bottom",
             y=1.03,
             xanchor="right",
-            x=0.72,
+            x=0.82,
             bgcolor="rgba(255, 255, 255, 0.9)"
         ),
         margin=dict(l=35, r=20, t=65, b=30)
