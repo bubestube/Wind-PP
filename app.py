@@ -423,27 +423,6 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
     )
 
-    # --- NIGHTTIME SHADING (Overlay boxes via fig.add_vrect) ---
-    num_rows_total = 3 if has_temp else 2
-    day_cursor = v_start.floor("D")
-    while day_cursor <= v_end + pd.Timedelta(days=2):
-        night_start = day_cursor + pd.Timedelta(hours=19)
-        night_end = day_cursor + pd.Timedelta(days=1, hours=6)
-        if night_start < v_end and night_end > v_start:
-            x_left = max(night_start, v_start)
-            x_right = min(night_end, v_end)
-            for r_idx in range(1, num_rows_total + 1):
-                fig.add_vrect(
-                    x0=x_left,
-                    x1=x_right,
-                    fillcolor="#f1f5f9",
-                    opacity=0.9,
-                    line_width=0,
-                    row=r_idx,
-                    col=1
-                )
-        day_cursor += pd.Timedelta(days=1)
-
     # --- TRUE CONTINUOUS 2D HORIZONTAL GRADIENT SURFACE ---
     y_levels = np.linspace(0, top_y_limit, 200)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
@@ -460,6 +439,35 @@ if df_all is not None and not df_all.empty:
         showscale=False,
         hoverinfo="skip"
     ), row=1, col=1)
+
+    # --- TRANSPARENT NIGHT SHADING BOXES ABOVE THE WIND CURVE ---
+    day_cursor = v_start.floor("D")
+    while day_cursor <= v_end + pd.Timedelta(days=2):
+        night_start = day_cursor + pd.Timedelta(hours=19)
+        night_end = day_cursor + pd.Timedelta(days=1, hours=6)
+        if night_start < v_end and night_end > v_start:
+            x_left = max(night_start, v_start)
+            x_right = min(night_end, v_end)
+
+            night_df = df_plot_lines[(df_plot_lines["timestamp"] >= x_left) & (df_plot_lines["timestamp"] <= x_right)]
+            if not night_df.empty:
+                night_x = list(night_df["timestamp"])
+                night_y = list(night_df["raffica_plot_y"])
+                
+                poly_x = [x_left] + night_x + [x_right, x_left]
+                poly_y = [top_y_limit * 1.05] + night_y + [top_y_limit * 1.05, top_y_limit * 1.05]
+
+                fig.add_trace(go.Scatter(
+                    x=poly_x,
+                    y=poly_y,
+                    fill="toself",
+                    fillcolor="rgba(148, 163, 184, 0.18)",
+                    line=dict(color="rgba(0,0,0,0)", width=0),
+                    hoverinfo="skip",
+                    showlegend=False
+                ), row=1, col=1)
+
+        day_cursor += pd.Timedelta(days=1)
 
     # --- INVERTED MASK: BLOCKS OUT EVERYTHING ABOVE GUST LINE ---
     x_mask = [v_start] + list(df_plot_lines["timestamp"]) + [v_end, v_end, v_start]
@@ -505,7 +513,7 @@ if df_all is not None and not df_all.empty:
         name="Wind Speed (Avg)",
         connectgaps=True,
         line=dict(color="#0f172a", width=1.8 if span_h >= 720 else 2.2),
-        marker=dict(size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
+        marker=dict(symbol="circle", size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
