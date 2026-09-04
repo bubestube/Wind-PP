@@ -440,23 +440,29 @@ if df_all is not None and not df_all.empty:
         hoverinfo="skip"
     ), row=1, col=1)
 
-    # --- INVERTED MASK: BLOCKS OUT EVERYTHING ABOVE GUST LINE ---
-    x_mask = [v_start] + list(df_plot_lines["timestamp"]) + [v_end, v_end, v_start]
-    y_mask = [df_plot_lines["raffica_plot_y"].iloc[0]] + list(df_plot_lines["raffica_plot_y"]) + [
-        df_plot_lines["raffica_plot_y"].iloc[-1], top_y_limit * 1.05, top_y_limit * 1.05
-    ]
+    # --- CLEAN WHITE MASK WITH CLIPPED ENDS FOR DAYTIME TOGGLE ---
+    if not df_plot_lines.empty:
+        t_first = df_plot_lines["timestamp"].iloc[0]
+        y_first = df_plot_lines["raffica_plot_y"].iloc[0]
+        t_last = df_plot_lines["timestamp"].iloc[-1]
+        y_last = df_plot_lines["raffica_plot_y"].iloc[-1]
 
-    fig.add_trace(go.Scatter(
-        x=x_mask,
-        y=y_mask,
-        fill="toself",
-        fillcolor="#ffffff",
-        line=dict(color="rgba(255, 255, 255, 0)", width=0),
-        hoverinfo="skip",
-        showlegend=False
-    ), row=1, col=1)
+        x_mask = [v_start, t_first] + list(df_plot_lines["timestamp"]) + [t_last, v_end, v_end, v_start]
+        y_mask = [top_y_limit * 1.05, y_first] + list(df_plot_lines["raffica_plot_y"]) + [
+            y_last, top_y_limit * 1.05, top_y_limit * 1.05, top_y_limit * 1.05
+        ]
 
-    # --- PERFECT RECTANGULAR NIGHT SHADING BOXES ---
+        fig.add_trace(go.Scatter(
+            x=x_mask,
+            y=y_mask,
+            fill="toself",
+            fillcolor="#ffffff",
+            line=dict(color="rgba(255, 255, 255, 0)", width=0),
+            hoverinfo="skip",
+            showlegend=False
+        ), row=1, col=1)
+
+    # --- TRANSPARENT NIGHT SHADING BOXES ABOVE THE WIND CURVE ---
     day_cursor = v_start.floor("D")
     while day_cursor <= v_end + pd.Timedelta(days=2):
         night_start = day_cursor + pd.Timedelta(hours=19)
@@ -465,46 +471,23 @@ if df_all is not None and not df_all.empty:
             x_left = max(night_start, v_start)
             x_right = min(night_end, v_end)
 
-            # Row 1 (Wind Speed): Perfectly rectangular box from bottom up to top ceiling
-            fig.add_trace(go.Scatter(
-                x=[x_left, x_right, x_right, x_left, x_left],
-                y=[0, 0, top_y_limit * 1.05, top_y_limit * 1.05, 0],
-                fill="toself",
-                fillcolor="rgba(148, 163, 184, 0.22)",
-                line=dict(color="rgba(0,0,0,0)", width=0),
-                hoverinfo="skip",
-                showlegend=False
-            ), row=1, col=1)
+            night_df = df_plot_lines[(df_plot_lines["timestamp"] >= x_left) & (df_plot_lines["timestamp"] <= x_right)]
+            if not night_df.empty:
+                night_x = list(night_df["timestamp"])
+                night_y = list(night_df["raffica_plot_y"])
+                
+                poly_x = [x_left] + night_x + [x_right, x_left]
+                poly_y = [top_y_limit * 1.05] + night_y + [top_y_limit * 1.05, top_y_limit * 1.05]
 
-            # Row 2 (Wind Direction): Full rectangular box (-35 to 395)
-            fig.add_trace(go.Scatter(
-                x=[x_left, x_right, x_right, x_left, x_left],
-                y=[-35, -35, 395, 395, -35],
-                fill="toself",
-                fillcolor="rgba(148, 163, 184, 0.22)",
-                line=dict(color="rgba(0,0,0,0)", width=0),
-                hoverinfo="skip",
-                showlegend=False
-            ), row=2, col=1)
-
-            # Row 3 (Temperature): Full rectangular box
-            if has_temp:
-                t_min = df_plot_lines["temperatura_c"].min()
-                t_max = df_plot_lines["temperatura_c"].max()
-                t_pad = max(2.0, (t_max - t_min) * 0.1) if pd.notnull(t_min) and pd.notnull(t_max) else 5.0
                 fig.add_trace(go.Scatter(
-                    x=[x_left, x_right, x_right, x_left, x_left],
-                    y=[(t_min - t_pad) if pd.notnull(t_min) else 0,
-                       (t_min - t_pad) if pd.notnull(t_min) else 0,
-                       (t_max + t_pad) if pd.notnull(t_max) else 40,
-                       (t_max + t_pad) if pd.notnull(t_max) else 40,
-                       (t_min - t_pad) if pd.notnull(t_min) else 0],
+                    x=poly_x,
+                    y=poly_y,
                     fill="toself",
                     fillcolor="rgba(148, 163, 184, 0.22)",
                     line=dict(color="rgba(0,0,0,0)", width=0),
                     hoverinfo="skip",
                     showlegend=False
-                ), row=3, col=1)
+                ), row=1, col=1)
 
         day_cursor += pd.Timedelta(days=1)
 
@@ -629,7 +612,7 @@ if df_all is not None and not df_all.empty:
             ax=-dx,
             ay=dy,
             axref="pixel",
-            ayref="pixel",
+            axref="pixel",
             showarrow=True,
             arrowhead=2,
             arrowsize=2,
@@ -805,21 +788,21 @@ if df_all is not None and not df_all.empty:
         margin=dict(l=35, r=20, t=65, b=30)
     )
 
-    st.plotly_chart(
-        fig,
-        use_container_width=True,
-        config={
-            "scrollZoom": False,
-            "displayModeBar": True,
-            "displaylogo": False,
-            "modeBarButtonsToRemove": ["zoom2d", "pan2d", "lasso2d", "select2d", "autoScale2d", "resetScale2d"]
-        }
-    )
+st.plotly_chart(
+    fig,
+    use_container_width=True,
+    config={
+        "scrollZoom": False,
+        "displayModeBar": True,
+        "displaylogo": False,
+        "modeBarButtonsToRemove": ["zoom2d", "pan2d", "lasso2d", "select2d", "autoScale2d", "resetScale2d"]
+    }
+)
 
-    with st.expander("📋 View Data Log (Active Window)"):
-        st.dataframe(
-            df_slice.sort_values("timestamp", ascending=False),
-            use_container_width=True
-        )
+with st.expander("📋 View Data Log (Active Window)"):
+    st.dataframe(
+        df_slice.sort_values("timestamp", ascending=False),
+        use_container_width=True
+    )
 else:
     st.info("No data file found yet.")
