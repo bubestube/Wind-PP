@@ -124,18 +124,6 @@ st.markdown("""
         border-radius: 6px !important;
     }
 
-    div[data-testid="stCheckbox"] {
-        background-color: #ffffff !important;
-        border: 1px solid #cbd5e1 !important;
-        border-radius: 6px !important;
-        padding: 5px 10px !important;
-        margin-top: 25px !important;
-    }
-    div[data-testid="stCheckbox"] label p {
-        color: #0f172a !important;
-        font-weight: 600 !important;
-    }
-
     .slider-month-pill {
         display: inline-flex;
         align-items: center;
