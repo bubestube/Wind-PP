@@ -519,7 +519,7 @@ if df_all is not None and not df_all.empty:
         name="Wind Speed (Avg)",
         connectgaps=True,
         line=dict(color="#0f172a", width=1.8 if span_h >= 720 else 2.2),
-        marker=dict(symbol="circle", size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
+        marker=dict(size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
@@ -621,43 +621,42 @@ if df_all is not None and not df_all.empty:
             opacity=0.9
         )
 
-    # Subplot 3: Temperature (Split into Day: Yellow, Night: Dark Blue)
+    # Subplot 3: Temperature (Yellow during Day 06-19h, Dark Blue during Night 19-06h)
     if has_temp:
-        # Segment 06:00 to 18:59 as daytime, 19:00 to 05:59 as night
         is_day = df_plot_lines["timestamp"].dt.hour.between(6, 18)
-        
-        # Continuous lines across transitions
-        temp_day = df_plot_lines["temperatura_c"].copy()
-        temp_night = df_plot_lines["temperatura_c"].copy()
+        marker_colors = ["#eab308" if day else "#1e3a8a" for day in is_day]
+        m_size = 2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4)
+        l_width = 1.8 if span_h >= 720 else 2.2
 
-        # Mask opposite periods to preserve separate lines and markers
-        day_mask = is_day | is_day.shift(1, fill_value=False) | is_day.shift(-1, fill_value=False)
-        night_mask = (~is_day) | (~is_day).shift(1, fill_value=False) | (~is_day).shift(-1, fill_value=False)
+        # Day lines: Keep daytime points, bridge across to the first night point (19h)
+        temp_day_line = df_plot_lines["temperatura_c"].where(is_day | is_day.shift(1, fill_value=False), np.nan)
+        # Night lines: Keep night points, start from 19h (no shift backward into the pre-19h point)
+        temp_night_line = df_plot_lines["temperatura_c"].where((~is_day) | is_day.shift(-1, fill_value=False), np.nan)
 
-        temp_day[~day_mask] = np.nan
-        temp_night[~night_mask] = np.nan
-
-        # Day trace (Yellow)
         fig.add_trace(go.Scatter(
             x=df_plot_lines["timestamp"],
-            y=temp_day,
-            mode="lines+markers",
-            name="Temp (Day: 06-19h)",
-            connectgaps=False,
-            line=dict(color="#eab308", width=1.8 if span_h >= 720 else 2.2),
-            marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#eab308"),
-            hovertemplate="<b>Temp:</b> %{y:.1f} °C<extra></extra>"
+            y=temp_day_line,
+            mode="lines",
+            line=dict(color="#eab308", width=l_width),
+            hoverinfo="skip",
+            showlegend=False
         ), row=3, col=1)
 
-        # Night trace (Dark Blue)
         fig.add_trace(go.Scatter(
             x=df_plot_lines["timestamp"],
-            y=temp_night,
-            mode="lines+markers",
-            name="Temp (Night: 19-06h)",
-            connectgaps=False,
-            line=dict(color="#1e3a8a", width=1.8 if span_h >= 720 else 2.2),
-            marker=dict(size=2.5 if span_h >= 720 else (3.5 if span_h >= 72 else 4), color="#1e3a8a"),
+            y=temp_night_line,
+            mode="lines",
+            line=dict(color="#1e3a8a", width=l_width),
+            hoverinfo="skip",
+            showlegend=False
+        ), row=3, col=1)
+
+        fig.add_trace(go.Scatter(
+            x=df_plot_lines["timestamp"],
+            y=df_plot_lines["temperatura_c"],
+            mode="markers",
+            name="Temperature (°C)",
+            marker=dict(size=m_size, color=marker_colors),
             hovertemplate="<b>Temp:</b> %{y:.1f} °C<extra></extra>"
         ), row=3, col=1)
 
