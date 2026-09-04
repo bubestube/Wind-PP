@@ -124,18 +124,6 @@ st.markdown("""
         border-radius: 6px !important;
     }
 
-    div[data-testid="stCheckbox"] {
-        background-color: #ffffff !important;
-        border: 1px solid #cbd5e1 !important;
-        border-radius: 6px !important;
-        padding: 5px 10px !important;
-        margin-top: 25px !important;
-    }
-    div[data-testid="stCheckbox"] label p {
-        color: #0f172a !important;
-        font-weight: 600 !important;
-    }
-
     .slider-month-pill {
         display: inline-flex;
         align-items: center;
@@ -226,7 +214,8 @@ if df_all is not None and not df_all.empty:
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 24
 
-    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6, ctrl_col7 = st.columns([1, 1, 1.3, 1.2, 1, 1, 1])
+    # 6 columns now since the daytime checkbox column was removed
+    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns([1, 1, 1.3, 1, 1, 1])
     with ctrl_col1:
         if st.button("◀ -1 Day"):
             st.session_state.window_end_time = max(
@@ -249,22 +238,20 @@ if df_all is not None and not df_all.empty:
             format_func=lambda h: f"{h} Hours" if h < 24 else f"{h//24} Day{'s' if h > 24 else ''}"
         )
     with ctrl_col4:
-        daytime_only = st.checkbox("☀️ Daytime Only (06-19h)", value=False)
-    with ctrl_col5:
         if st.button("+6 Hours ▶"):
             st.session_state.window_end_time = min(
                 t_global_max.to_pydatetime(),
                 st.session_state.window_end_time + datetime.timedelta(hours=6)
             )
             st.rerun()
-    with ctrl_col6:
+    with ctrl_col5:
         if st.button("+1 Day ▶"):
             st.session_state.window_end_time = min(
                 t_global_max.to_pydatetime(),
                 st.session_state.window_end_time + datetime.timedelta(days=1)
             )
             st.rerun()
-    with ctrl_col7:
+    with ctrl_col6:
         if st.button("🔴 Live Latest"):
             st.session_state.window_end_time = t_global_max.to_pydatetime()
             st.rerun()
@@ -316,9 +303,6 @@ if df_all is not None and not df_all.empty:
             st.rerun()
 
     df_slice = df_all[(df_all["timestamp"] >= v_start) & (df_all["timestamp"] <= v_end)].copy()
-
-    if daytime_only:
-        df_slice = df_slice[df_slice["timestamp"].dt.hour.between(6, 18)].copy()
 
     if df_slice.empty:
         st.warning("No records in selected window.")
@@ -440,27 +424,21 @@ if df_all is not None and not df_all.empty:
         hoverinfo="skip"
     ), row=1, col=1)
 
-    # --- CLEAN WHITE MASK WITH CLIPPED ENDS FOR DAYTIME TOGGLE ---
-    if not df_plot_lines.empty:
-        t_first = df_plot_lines["timestamp"].iloc[0]
-        y_first = df_plot_lines["raffica_plot_y"].iloc[0]
-        t_last = df_plot_lines["timestamp"].iloc[-1]
-        y_last = df_plot_lines["raffica_plot_y"].iloc[-1]
+    # --- INVERTED MASK: BLOCKS OUT EVERYTHING ABOVE GUST LINE ---
+    x_mask = [v_start] + list(df_plot_lines["timestamp"]) + [v_end, v_end, v_start]
+    y_mask = [df_plot_lines["raffica_plot_y"].iloc[0]] + list(df_plot_lines["raffica_plot_y"]) + [
+        df_plot_lines["raffica_plot_y"].iloc[-1], top_y_limit * 1.05, top_y_limit * 1.05
+    ]
 
-        x_mask = [v_start, t_first] + list(df_plot_lines["timestamp"]) + [t_last, v_end, v_end, v_start]
-        y_mask = [top_y_limit * 1.05, y_first] + list(df_plot_lines["raffica_plot_y"]) + [
-            y_last, top_y_limit * 1.05, top_y_limit * 1.05, top_y_limit * 1.05
-        ]
-
-        fig.add_trace(go.Scatter(
-            x=x_mask,
-            y=y_mask,
-            fill="toself",
-            fillcolor="#ffffff",
-            line=dict(color="rgba(255, 255, 255, 0)", width=0),
-            hoverinfo="skip",
-            showlegend=False
-        ), row=1, col=1)
+    fig.add_trace(go.Scatter(
+        x=x_mask,
+        y=y_mask,
+        fill="toself",
+        fillcolor="#ffffff",
+        line=dict(color="rgba(255, 255, 255, 0)", width=0),
+        hoverinfo="skip",
+        showlegend=False
+    ), row=1, col=1)
 
     # --- TRANSPARENT NIGHT SHADING BOXES ABOVE THE WIND CURVE ---
     day_cursor = v_start.floor("D")
