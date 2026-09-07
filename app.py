@@ -448,7 +448,6 @@ if df_all is not None and not df_all.empty:
         y_arr = df_plot_lines["velocita_plot_y"].to_numpy()
         t_arr = df_plot_lines["timestamp"].to_numpy()
 
-        # Increased marker frequency: setting step to 2 so every second data point gets a label/arrow
         if span_h >= 720:
             min_pts_step, max_pts_step, delta_threshold = 4, 12, 1.0
         elif span_h >= 168:
@@ -488,13 +487,14 @@ if df_all is not None and not df_all.empty:
     if has_temp:
         subplot_titles_list.append("<b>Temp (°C)</b>")
 
+    # Increased vertical spacing to prevent marker/label overlap between subplots
     fig = make_subplots(
         rows=3 if has_temp else 2,
         cols=1,
         shared_xaxes=False,
-        vertical_spacing=0.032,
+        vertical_spacing=0.055,
         subplot_titles=tuple(subplot_titles_list),
-        row_heights=[0.68, 0.18, 0.14] if has_temp else [0.78, 0.22]
+        row_heights=[0.64, 0.20, 0.16] if has_temp else [0.74, 0.26]
     )
 
     y_levels = np.linspace(0, top_y_limit, 200)
@@ -868,7 +868,7 @@ if df_all is not None and not df_all.empty:
         )
 
     fig.update_layout(
-        height=680 if has_temp else 520,
+        height=700 if has_temp else 540,
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
         font=dict(color="#1e293b", family="Arial, sans-serif"),
