@@ -289,19 +289,17 @@ if df_all is not None and not df_all.empty:
         curr_target = min(max_slider, max(min_slider, st.session_state.window_end_time))
         closest_idx = int(np.argmin([abs((t - curr_target).total_seconds()) for t in timeline_ticks]))
 
-        # Labeled timeline navigation header showing available range bounds
-        bound_lbl_col1, bound_lbl_col2 = st.columns(2)
-        with bound_lbl_col1:
-            st.markdown(f"<span style='font-size:0.75rem; color:#64748b;'>◀ Earliest: {t_global_min.strftime('%d.%m. %H:%M')}</span>", unsafe_allow_html=True)
-        with bound_lbl_col2:
-            st.markdown(f"<span style='font-size:0.75rem; color:#64748b; float:right;'>Latest: {t_global_max.strftime('%d.%m. %H:%M')} ▶</span>", unsafe_allow_html=True)
+        # Format slider steps so each tick clearly displays its date and time context (e.g. "Wed 02.09 14:00")
+        def format_slider_tick(idx):
+            dt = timeline_ticks[idx]
+            # Show date explicitly when it changes or at standard intervals
+            return dt.strftime("%a %d.%m. %H:%M")
 
         selected_slider_idx = st.select_slider(
             "Scroll Active Timeline Window:",
             options=range(len(timeline_ticks)),
             value=closest_idx,
-            label_visibility="collapsed",
-            format_func=lambda idx: timeline_ticks[idx].strftime("%a %d.%m. %H:%M")
+            format_func=format_slider_tick
         )
 
         chosen_dt = timeline_ticks[selected_slider_idx]
