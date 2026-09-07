@@ -76,8 +76,8 @@ st.markdown("""
     .block-container {
         padding-top: 0.6rem !important;
         padding-bottom: 1.2rem !important;
-        padding-left: 0.1rem !important;
-        padding-right: 0.1rem !important;
+        padding-left: 0.05rem !important;
+        padding-right: 0.05rem !important;
     }
     .stApp {
         background-color: #f8fafc;
@@ -493,9 +493,9 @@ if df_all is not None and not df_all.empty:
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
 
-    subplot_titles_list = ["", "<b>Direction</b>"]
+    subplot_titles_list = ["", ""]
     if has_temp:
-        subplot_titles_list.append("<b>Temp (°C)</b>")
+        subplot_titles_list.append("")
 
     fig = make_subplots(
         rows=3 if has_temp else 2,
@@ -784,11 +784,9 @@ if df_all is not None and not df_all.empty:
             hovertemplate="<b>Temp:</b> %{y:.1f} °C<extra></extra>"
         ), row=3, col=1)
 
-        # Temperature y-axis with tick labels enabled
         fig.update_yaxes(
             title_text="",
-            showticklabels=True,
-            tickfont=dict(color="#0f172a", size=9),
+            showticklabels=False,
             showline=False,
             gridcolor="#cbd5e1",
             fixedrange=True,
@@ -823,10 +821,10 @@ if df_all is not None and not df_all.empty:
             )
         day_cursor += pd.Timedelta(days=1)
 
-    # Beaufort scale numbers shown on wind speed y-axis, but no axis title or line padding
+    # Beaufort scale numbers shown on wind speed y-axis, flush left
     bft_ticks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     bft_stretched_vals = [bft_to_stretched(b) for b in bft_ticks]
-    bft_labels_compact = [f"{b} Bft" for b in bft_ticks]
+    bft_labels_compact = [f"{b}" for b in bft_ticks]
 
     fig.update_yaxes(
         title_text="",
@@ -842,14 +840,10 @@ if df_all is not None and not df_all.empty:
         row=1, col=1
     )
 
-    # Direction y-axis with tick labels enabled
     fig.update_yaxes(
         title_text="",
         range=[-35, 395],
-        tickvals=[0, 90, 180, 270, 360],
-        ticktext=["N", "E", "S", "W", "N"],
-        showticklabels=True,
-        tickfont=dict(color="#0f172a", size=9),
+        showticklabels=False,
         showline=False,
         gridcolor="#cbd5e1",
         fixedrange=True,
@@ -893,7 +887,7 @@ if df_all is not None and not df_all.empty:
             row=r, col=1
         )
 
-    # Tight left margin to keep the graph flush left while accommodating the y-axis labels
+    # Ultra-tight left margin (`l=15`) to push the entire graph all the way to the left side of the screen
     fig.update_layout(
         height=680 if has_temp else 520,
         paper_bgcolor="#ffffff",
@@ -902,7 +896,7 @@ if df_all is not None and not df_all.empty:
         dragmode=False,
         hovermode="x unified",
         showlegend=False,
-        margin=dict(l=28, r=10, t=30, b=15)
+        margin=dict(l=15, r=5, t=30, b=15)
     )
 
     st.plotly_chart(
