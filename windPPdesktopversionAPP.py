@@ -14,7 +14,7 @@ st.set_page_config(
 )
 
 CSV_FILE = "porto_pollo_wind_history.csv"
-BFT_EXP = 1.55
+BFT_EXP = 1.85  # Increased exponent to further stretch the upper scale and separate speed vs. gusts
 
 # --- Vectorized Calculations ---
 def knots_to_bft(knots):
@@ -519,7 +519,7 @@ if df_all is not None and not df_all.empty:
         name="Wind Speed (Avg)",
         connectgaps=True,
         line=dict(color="#0f172a", width=1.8 if span_h >= 720 else 2.2),
-        marker=dict(size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
+        marker=dict(symbol="circle", size=3.0 if span_h >= 720 else (3.5 if span_h >= 72 else 4.0), color="#0f172a"),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
@@ -724,7 +724,7 @@ if df_all is not None and not df_all.empty:
             )
         day_cursor += pd.Timedelta(days=1)
 
-    # Axis Calibrations
+    # Axis Calibrations using BFT_EXP = 1.85
     bft_ticks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     bft_stretched_vals = [bft_to_stretched(b) for b in bft_ticks]
     bft_labels = [
@@ -813,14 +813,7 @@ if df_all is not None and not df_all.empty:
         font=dict(color="#1e293b", family="Arial, sans-serif"),
         dragmode=False,
         hovermode="x unified",
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1,
-            bgcolor="rgba(255, 255, 255, 0.9)"
-        ),
+        showlegend=False,
         margin=dict(l=35, r=20, t=65, b=30)
     )
 
