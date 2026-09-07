@@ -392,8 +392,8 @@ if df_all is not None and not df_all.empty:
             slider_freq = "30min"
             resample_rule = "30min"
         else:
-            slider_freq = "15min"
-            resample_rule = None
+            slider_freq = "30min"
+            resample_rule = "30min"
     else:
         if span_h >= 720:
             slider_freq = "3h"
@@ -404,6 +404,9 @@ if df_all is not None and not df_all.empty:
         elif span_h >= 72:
             slider_freq = "30min"
             resample_rule = "30min"
+        elif span_h >= 24:
+            slider_freq = "15min"
+            resample_rule = "15min"
         else:
             slider_freq = "15min"
             resample_rule = None
@@ -505,7 +508,7 @@ if df_all is not None and not df_all.empty:
         elif span_h >= 24:
             min_pts_step, max_pts_step, delta_threshold = (10, 30, 2.5) if is_portrait else (3, 10, 1.5)
         else:
-            min_pts_step, max_pts_step, delta_threshold = 3, 10, 1.0
+            min_pts_step, max_pts_step, delta_threshold = 2, 8, 1.0
 
         for idx in valid_indices[1:]:
             curr_v, curr_d, curr_g = v_arr[idx], d_arr[idx], r_arr[idx]
@@ -699,12 +702,7 @@ if df_all is not None and not df_all.empty:
     df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
-    target_arrow_count = (
-        (4 if is_portrait else 8) if span_h >= 720 else
-        ((5 if is_portrait else 10) if span_h >= 168 else
-         ((6 if is_portrait else 12) if span_h >= 72 else
-          ((8 if is_portrait else 16) if span_h >= 24 else 18)))
-    )
+    target_arrow_count = 8 if span_h >= 720 else (10 if span_h >= 168 else (12 if span_h >= 72 else 14))
     steady_step = max(4, len(df_for_arrows) // target_arrow_count)
     selected_indices = []
     if not df_for_arrows.empty:
