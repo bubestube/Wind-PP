@@ -377,7 +377,7 @@ if df_all is not None and not df_all.empty:
     min_slider = (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime()
     max_slider = t_global_max.to_pydatetime()
 
-    # Dynamic resampling and tick spacing: 30min for 24h view ONLY in portrait mode
+    # Explicit 30-min for portrait at 24h, 15-min for landscape at 24h
     if is_portrait:
         if span_h >= 720:
             slider_freq = "12h"
@@ -392,8 +392,8 @@ if df_all is not None and not df_all.empty:
             slider_freq = "30min"
             resample_rule = "30min"
         else:
-            slider_freq = "30min"
-            resample_rule = "30min"
+            slider_freq = "15min"
+            resample_rule = None
     else:
         if span_h >= 720:
             slider_freq = "3h"
@@ -406,7 +406,7 @@ if df_all is not None and not df_all.empty:
             resample_rule = "30min"
         elif span_h >= 24:
             slider_freq = "15min"
-            resample_rule = "15min"
+            resample_rule = None  # None preserves raw 10-15 min CSV frequency
         else:
             slider_freq = "15min"
             resample_rule = None
@@ -506,7 +506,7 @@ if df_all is not None and not df_all.empty:
         elif span_h >= 72:
             min_pts_step, max_pts_step, delta_threshold = (20, 60, 3.5) if is_portrait else (8, 22, 3.5)
         elif span_h >= 24:
-            min_pts_step, max_pts_step, delta_threshold = (10, 30, 2.5) if is_portrait else (3, 10, 1.5)
+            min_pts_step, max_pts_step, delta_threshold = (6, 18, 2.0) if is_portrait else (3, 10, 1.0)
         else:
             min_pts_step, max_pts_step, delta_threshold = 2, 8, 1.0
 
@@ -702,7 +702,7 @@ if df_all is not None and not df_all.empty:
     df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
-    target_arrow_count = 8 if span_h >= 720 else (10 if span_h >= 168 else (12 if span_h >= 72 else 14))
+    target_arrow_count = 8 if span_h >= 720 else (10 if span_h >= 168 else (12 if span_h >= 72 else 16))
     steady_step = max(4, len(df_for_arrows) // target_arrow_count)
     selected_indices = []
     if not df_for_arrows.empty:
