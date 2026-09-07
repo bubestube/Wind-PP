@@ -813,6 +813,7 @@ if df_all is not None and not df_all.empty:
         font=dict(color="#1e293b", family="Arial, sans-serif"),
         dragmode=False,
         hovermode="x unified",
+        showlegend=False,
         margin=dict(l=35, r=20, t=65, b=30)
     )
 
