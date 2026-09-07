@@ -71,12 +71,12 @@ def get_wg_badge(val):
 
 st.markdown("""
     <style>
-    /* Maximize canvas on mobile */
+    /* Fixed top padding to prevent title clipping */
     .block-container {
-        padding-top: 0.6rem !important;
+        padding-top: 2.2rem !important;
         padding-bottom: 1.2rem !important;
-        padding-left: 0.1rem !important;
-        padding-right: 0.1rem !important;
+        padding-left: 0.4rem !important;
+        padding-right: 0.4rem !important;
     }
     .stApp {
         background-color: #f8fafc;
