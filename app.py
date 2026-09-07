@@ -379,7 +379,7 @@ if df_all is not None and not df_all.empty:
     min_slider = (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime()
     max_slider = t_global_max.to_pydatetime()
 
-    # Dynamic data reduction for portrait vs landscape views (starting from span_h >= 24)
+    # Dynamic data reduction for portrait vs landscape views (including 24h / 1-day view)
     if is_portrait:
         if span_h >= 720:
             slider_freq = "12h"
@@ -394,8 +394,8 @@ if df_all is not None and not df_all.empty:
             slider_freq = "1h"
             resample_rule = "1h"
         else:
-            slider_freq = "15min"
-            resample_rule = None
+            slider_freq = "30min"
+            resample_rule = "30min"
     else:
         if span_h >= 720:
             slider_freq = "3h"
@@ -480,7 +480,7 @@ if df_all is not None and not df_all.empty:
         f_idx = valid_indices[0]
         v0 = df_plot_lines.loc[f_idx, 'velocita_knots']
         d0 = df_plot_lines.loc[f_idx, 'direzione_deg']
-        speed_labels[f_idx] = f"{v0:.0f}" if span_h > 24 else f"{v0:.1f}"
+        speed_labels[f_idx] = f"{v0:.0f}" if span_h >= 24 else f"{v0:.1f}"
         labeled_speed_points.append({
             "timestamp": df_plot_lines.loc[f_idx, 'timestamp'],
             "velocita_plot_y": df_plot_lines.loc[f_idx, 'velocita_plot_y'],
@@ -505,9 +505,9 @@ if df_all is not None and not df_all.empty:
         elif span_h >= 72:
             min_pts_step, max_pts_step, delta_threshold = (14, 40, 3.5) if is_portrait else (8, 22, 3.5)
         elif span_h >= 24:
-            min_pts_step, max_pts_step, delta_threshold = (8, 24, 2.5) if is_portrait else (3, 10, 1.5)
+            min_pts_step, max_pts_step, delta_threshold = (10, 30, 3.0) if is_portrait else (3, 10, 1.5)
         else:
-            min_pts_step, max_pts_step, delta_threshold = 3, 10, 1.5
+            min_pts_step, max_pts_step, delta_threshold = (6, 18, 2.0) if is_portrait else (3, 10, 1.5)
 
         for idx in valid_indices[1:]:
             curr_v, curr_d, curr_g = v_arr[idx], d_arr[idx], r_arr[idx]
@@ -515,7 +515,7 @@ if df_all is not None and not df_all.empty:
             pts_since_s = idx - last_s_idx
 
             if (delta_s >= delta_threshold and pts_since_s >= min_pts_step) or pts_since_s >= max_pts_step:
-                speed_labels[idx] = f"{curr_v:.0f}" if span_h > 24 else f"{curr_v:.1f}"
+                speed_labels[idx] = f"{curr_v:.0f}" if span_h >= 24 else f"{curr_v:.1f}"
                 labeled_speed_points.append({
                     "timestamp": t_arr[idx],
                     "velocita_plot_y": y_arr[idx],
@@ -527,7 +527,7 @@ if df_all is not None and not df_all.empty:
                 delta_g = abs(curr_g - last_g_val)
                 pts_since_g = idx - last_g_idx
                 if (delta_g >= delta_threshold and pts_since_g >= min_pts_step) or pts_since_g >= max_pts_step:
-                    gust_labels[idx] = f"{curr_g:.0f}" if span_h > 24 else f"{curr_g:.1f}"
+                    gust_labels[idx] = f"{curr_g:.0f}" if span_h >= 24 else f"{curr_g:.1f}"
                     last_g_val, last_g_idx = curr_g, idx
 
     df_plot_lines["speed_label"] = speed_labels
@@ -702,10 +702,10 @@ if df_all is not None and not df_all.empty:
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
     target_arrow_count = (
-        (6 if is_portrait else 8) if span_h >= 720 else
-        ((8 if is_portrait else 10) if span_h >= 168 else
-         ((10 if is_portrait else 12) if span_h >= 72 else
-          ((12 if is_portrait else 16) if span_h >= 24 else 18)))
+        (5 if is_portrait else 8) if span_h >= 720 else
+        ((6 if is_portrait else 10) if span_h >= 168 else
+         ((8 if is_portrait else 12) if span_h >= 72 else
+          ((8 if is_portrait else 16) if span_h >= 24 else 18)))
     )
     steady_step = max(4, len(df_for_arrows) // target_arrow_count)
     selected_indices = []
@@ -894,7 +894,7 @@ if df_all is not None and not df_all.empty:
         dtick_val = 6 * 3600 * 1000
         tick_format_str = "%H:%M<br>%a"
     elif span_h >= 24:
-        dtick_val = 3 * 3600 * 1000
+        dtick_val = 6 * 3600 * 1000 if is_portrait else 3 * 3600 * 1000
         tick_format_str = "%H:%M"
     else:
         dtick_val = 1 * 3600 * 1000
