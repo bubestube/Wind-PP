@@ -6,7 +6,6 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
-import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title="Porto Pollo – Windguru Live Station",
@@ -72,12 +71,12 @@ def get_wg_badge(val):
 
 st.markdown("""
     <style>
-    /* Maximize canvas on mobile */
+    /* Fixed top padding to prevent title clipping */
     .block-container {
-        padding-top: 0.6rem !important;
+        padding-top: 2.2rem !important;
         padding-bottom: 1.2rem !important;
-        padding-left: 0.1rem !important;
-        padding-right: 0.1rem !important;
+        padding-left: 0.4rem !important;
+        padding-right: 0.4rem !important;
     }
     .stApp {
         background-color: #f8fafc;
@@ -173,64 +172,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-header_left, header_right = st.columns([3, 1])
-with header_left:
-    st.title("🪁 Porto Pollo Live")
-with header_right:
-    components.html("""
-        <style>
-          #fsBtn {
-            width: 100%;
-            height: 34px;
-            margin-top: 14px;
-            background-color: #ffffff;
-            color: #0f172a;
-            border: 1px solid #cbd5e1;
-            border-radius: 6px;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            font-weight: 600;
-            font-size: 0.80rem;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 4px;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-            transition: background-color 0.15s ease, border-color 0.15s ease;
-          }
-          #fsBtn:hover {
-            background-color: #f8fafc;
-            border-color: #94a3b8;
-            color: #0284c7;
-          }
-        </style>
-        <button id="fsBtn"><span>⛶</span> Fullscreen</button>
-        <script>
-          const btn = document.getElementById('fsBtn');
-          btn.addEventListener('click', function () {
-            const rootDoc = window.parent.document;
-            const targetEl = rootDoc.documentElement;
-            const isFs = rootDoc.fullscreenElement || 
-                         rootDoc.webkitFullscreenElement || 
-                         rootDoc.mozFullScreenElement || 
-                         rootDoc.msFullscreenElement;
-
-            if (!isFs) {
-              if (targetEl.requestFullscreen) { targetEl.requestFullscreen(); }
-              else if (targetEl.webkitRequestFullscreen) { targetEl.webkitRequestFullscreen(); }
-              else if (targetEl.mozRequestFullScreen) { targetEl.mozRequestFullScreen(); }
-              else if (targetEl.msRequestFullscreen) { targetEl.msRequestFullscreen(); }
-              btn.innerHTML = '<span>✕</span> Exit';
-            } else {
-              if (rootDoc.exitFullscreen) { rootDoc.exitFullscreen(); }
-              else if (rootDoc.webkitExitFullscreen) { rootDoc.webkitExitFullscreen(); }
-              else if (rootDoc.mozCancelFullScreen) { rootDoc.mozCancelFullScreen(); }
-              else if (rootDoc.msExitFullscreen) { rootDoc.msExitFullscreen(); }
-              btn.innerHTML = '<span>⛶</span> Fullscreen';
-            }
-          });
-        </script>
-    """, height=50)
+st.title("🪁 Porto Pollo Live")
 
 @st.cache_data(ttl=60, show_spinner=False)
 def load_all_records(csv_path):
@@ -303,14 +245,42 @@ if df_all is not None and not df_all.empty:
         st.session_state.window_end_time = t_global_max.to_pydatetime()
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 12
+    if "is_portrait_mode" not in st.session_state:
+        st.session_state.is_portrait_mode = True
 
-    # Width selector
-    st.session_state.window_span_hours = st.selectbox(
-        "Window Width:",
-        options=[6, 12, 24, 72, 168, 720],
-        index=1,
-        format_func=lambda h: f"{h}h" if h < 24 else f"{h//24}d"
-    )
+    # Controls row: Width selector & Color-changing Portrait button toggle
+    ctrl_col1, ctrl_col2 = st.columns([1.6, 1.4])
+    with ctrl_col1:
+        st.session_state.window_span_hours = st.selectbox(
+            "Window Width:",
+            options=[6, 12, 24, 72, 168, 720],
+            index=1,
+            format_func=lambda h: f"{h}h" if h < 24 else f"{h//24}d"
+        )
+    with ctrl_col2:
+        st.markdown('<div style="font-size:0.75rem; font-weight:600; color:#475569; margin-bottom:2px;">Layout Mode:</div>', unsafe_allow_html=True)
+        
+        btn_bg = "#16a34a" if st.session_state.is_portrait_mode else "#dc2626"
+        st.markdown(f"""
+            <style>
+            div.stButton > button#modeToggleBtn {{
+                background-color: {btn_bg} !important;
+                color: #ffffff !important;
+                border: 2px solid #ffffff !important;
+                box-shadow: 0 0 0 1px {btn_bg} !important;
+            }}
+            div.stButton > button#modeToggleBtn:hover {{
+                opacity: 0.95 !important;
+                color: #ffffff !important;
+            }}
+            </style>
+        """, unsafe_allow_html=True)
+
+        if st.button("📱 Portrait Mode" if st.session_state.is_portrait_mode else "💻 Landscape Mode", key="modeToggleBtn"):
+            st.session_state.is_portrait_mode = not st.session_state.is_portrait_mode
+            st.rerun()
+
+    is_portrait_mode = st.session_state.is_portrait_mode
 
     # Horizontal navigation button bar
     btn_cols = st.columns(5)
@@ -356,22 +326,39 @@ if df_all is not None and not df_all.empty:
     min_slider = (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime()
     max_slider = t_global_max.to_pydatetime()
 
-    # Enforce 30-minute sampling rule for 24h view and above
-    if span_h >= 720:
-        slider_freq = "12h"
-        resample_rule = "12h"
-    elif span_h >= 168:
-        slider_freq = "6h"
-        resample_rule = "6h"
-    elif span_h >= 72:
-        slider_freq = "2h"
-        resample_rule = "2h"
-    elif span_h >= 24:
-        slider_freq = "30min"
-        resample_rule = "30min"
+    # 30-min sampling for portrait mode at 24h, 15-min for landscape mode
+    if is_portrait_mode:
+        if span_h >= 720:
+            slider_freq = "12h"
+            resample_rule = "12h"
+        elif span_h >= 168:
+            slider_freq = "6h"
+            resample_rule = "6h"
+        elif span_h >= 72:
+            slider_freq = "2h"
+            resample_rule = "2h"
+        elif span_h >= 24:
+            slider_freq = "30min"
+            resample_rule = "30min"
+        else:
+            slider_freq = "15min"
+            resample_rule = None
     else:
-        slider_freq = "15min"
-        resample_rule = None
+        if span_h >= 720:
+            slider_freq = "3h"
+            resample_rule = "3h"
+        elif span_h >= 168:
+            slider_freq = "1h"
+            resample_rule = "1h"
+        elif span_h >= 72:
+            slider_freq = "30min"
+            resample_rule = "30min"
+        elif span_h >= 24:
+            slider_freq = "15min"
+            resample_rule = None
+        else:
+            slider_freq = "15min"
+            resample_rule = None
 
     v_end = min(pd.to_datetime(st.session_state.window_end_time), t_global_max)
     v_start = v_end - pd.Timedelta(hours=span_h)
@@ -462,15 +449,15 @@ if df_all is not None and not df_all.empty:
         t_arr = df_plot_lines["timestamp"].to_numpy()
 
         if span_h >= 720:
-            min_pts_step, max_pts_step, delta_threshold = 12, 36, 5.0
+            min_pts_step, max_pts_step, delta_threshold = 4, 12, 1.0
         elif span_h >= 168:
-            min_pts_step, max_pts_step, delta_threshold = 8, 24, 4.0
+            min_pts_step, max_pts_step, delta_threshold = 3, 10, 1.0
         elif span_h >= 72:
-            min_pts_step, max_pts_step, delta_threshold = 6, 18, 3.0
-        elif span_h >= 24:
-            min_pts_step, max_pts_step, delta_threshold = 4, 12, 2.0
-        else:
             min_pts_step, max_pts_step, delta_threshold = 2, 8, 1.0
+        elif span_h >= 24:
+            min_pts_step, max_pts_step, delta_threshold = 2, 6, 0.5
+        else:
+            min_pts_step, max_pts_step, delta_threshold = 2, 5, 0.5
 
         for idx in valid_indices[1:]:
             curr_v, curr_d, curr_g = v_arr[idx], d_arr[idx], r_arr[idx]
@@ -500,13 +487,14 @@ if df_all is not None and not df_all.empty:
     if has_temp:
         subplot_titles_list.append("<b>Temp (°C)</b>")
 
+    # Increased vertical spacing to prevent marker/label overlap between subplots
     fig = make_subplots(
         rows=3 if has_temp else 2,
         cols=1,
         shared_xaxes=False,
-        vertical_spacing=0.032,
+        vertical_spacing=0.075,
         subplot_titles=tuple(subplot_titles_list),
-        row_heights=[0.68, 0.18, 0.14] if has_temp else [0.78, 0.22]
+        row_heights=[0.64, 0.20, 0.16] if has_temp else [0.74, 0.26]
     )
 
     y_levels = np.linspace(0, top_y_limit, 200)
@@ -664,7 +652,7 @@ if df_all is not None and not df_all.empty:
     df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
-    target_arrow_count = 8 if span_h >= 720 else (10 if span_h >= 168 else (12 if span_h >= 72 else 14))
+    target_arrow_count = 8 if span_h >= 720 else (10 if span_h >= 168 else (12 if span_h >= 72 else 16))
     steady_step = max(4, len(df_for_arrows) // target_arrow_count)
     selected_indices = []
     if not df_for_arrows.empty:
@@ -852,10 +840,10 @@ if df_all is not None and not df_all.empty:
         dtick_val = 6 * 3600 * 1000
         tick_format_str = "%H:%M<br>%a"
     elif span_h >= 24:
-        dtick_val = 3 * 3600 * 1000
+        dtick_val = 6 * 3600 * 1000 if is_portrait_mode else 3 * 3600 * 1000
         tick_format_str = "%H:%M"
     else:
-        dtick_val = 1 * 3600 * 1000
+        dtick_val = 2 * 3600 * 1000 if is_portrait_mode else 1 * 3600 * 1000
         tick_format_str = "%H:%M"
 
     fig.update_xaxes(
@@ -880,7 +868,7 @@ if df_all is not None and not df_all.empty:
         )
 
     fig.update_layout(
-        height=680 if has_temp else 520,
+        height=700 if has_temp else 540,
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
         font=dict(color="#1e293b", family="Arial, sans-serif"),
