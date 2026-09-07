@@ -214,21 +214,9 @@ if df_all is not None and not df_all.empty:
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 24
 
+    # Render selectbox first so st.session_state.window_span_hours is updated immediately for the buttons below
     ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns([1, 1, 1.3, 1, 1, 1])
-    with ctrl_col1:
-        if st.button("◀ -1 Day"):
-            st.session_state.window_end_time = max(
-                (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime(),
-                st.session_state.window_end_time - datetime.timedelta(days=1)
-            )
-            st.rerun()
-    with ctrl_col2:
-        if st.button("◀ -6 Hours"):
-            st.session_state.window_end_time = max(
-                (t_global_min + pd.Timedelta(hours=st.session_state.window_span_hours)).to_pydatetime(),
-                st.session_state.window_end_time - datetime.timedelta(hours=6)
-            )
-            st.rerun()
+    
     with ctrl_col3:
         st.session_state.window_span_hours = st.selectbox(
             "Window Width:",
@@ -236,6 +224,23 @@ if df_all is not None and not df_all.empty:
             index=2,
             format_func=lambda h: f"{h} Hours" if h < 24 else f"{h//24} Day{'s' if h > 24 else ''}"
         )
+
+    span_h = st.session_state.window_span_hours
+
+    with ctrl_col1:
+        if st.button("◀ -1 Day"):
+            st.session_state.window_end_time = max(
+                (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime(),
+                st.session_state.window_end_time - datetime.timedelta(days=1)
+            )
+            st.rerun()
+    with ctrl_col2:
+        if st.button("◀ -6 Hours"):
+            st.session_state.window_end_time = max(
+                (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime(),
+                st.session_state.window_end_time - datetime.timedelta(hours=6)
+            )
+            st.rerun()
     with ctrl_col4:
         if st.button("+6 Hours ▶"):
             st.session_state.window_end_time = min(
@@ -255,7 +260,6 @@ if df_all is not None and not df_all.empty:
             st.session_state.window_end_time = t_global_max.to_pydatetime()
             st.rerun()
 
-    span_h = st.session_state.window_span_hours
     min_slider = (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime()
     max_slider = t_global_max.to_pydatetime()
 
@@ -397,7 +401,6 @@ if df_all is not None and not df_all.empty:
     if has_temp:
         subplot_titles_list.append("<b>Temperature (°C)</b>")
 
-    # Vertical spacing updated to 0.075 as requested, with proportional row heights
     fig = make_subplots(
         rows=3 if has_temp else 2,
         cols=1,
@@ -449,7 +452,6 @@ if df_all is not None and not df_all.empty:
             x_left = max(night_start, v_start)
             x_right = min(night_end, v_end)
 
-            # Row 1 (Wind Speed): Perfectly rectangular box from bottom up to top ceiling
             fig.add_trace(go.Scatter(
                 x=[x_left, x_right, x_right, x_left, x_left],
                 y=[0, 0, top_y_limit * 1.05, top_y_limit * 1.05, 0],
@@ -460,7 +462,6 @@ if df_all is not None and not df_all.empty:
                 showlegend=False
             ), row=1, col=1)
 
-            # Row 2 (Wind Direction): Full rectangular box (-35 to 395)
             fig.add_trace(go.Scatter(
                 x=[x_left, x_right, x_right, x_left, x_left],
                 y=[-35, -35, 395, 395, -35],
@@ -471,7 +472,6 @@ if df_all is not None and not df_all.empty:
                 showlegend=False
             ), row=2, col=1)
 
-            # Row 3 (Temperature): Full rectangular box
             if has_temp:
                 t_min = df_plot_lines["temperatura_c"].min()
                 t_max = df_plot_lines["temperatura_c"].max()
@@ -644,7 +644,6 @@ if df_all is not None and not df_all.empty:
             if pd.isna(y1) or pd.isna(y2):
                 continue
 
-            # Check if segment midpoint is in night hours (19:00 - 05:59:59)
             t_mid = t1 + (t2 - t1) / 2
             is_segment_night = not (6 <= t_mid.hour < 19)
 
@@ -655,7 +654,6 @@ if df_all is not None and not df_all.empty:
                 day_x.extend([t1, t2, None])
                 day_y.extend([y1, y2, None])
 
-        # Day connecting lines (Yellow)
         if day_x:
             fig.add_trace(go.Scatter(
                 x=day_x,
@@ -666,7 +664,6 @@ if df_all is not None and not df_all.empty:
                 showlegend=False
             ), row=3, col=1)
 
-        # Night connecting lines (Dark Blue)
         if night_x:
             fig.add_trace(go.Scatter(
                 x=night_x,
@@ -677,7 +674,6 @@ if df_all is not None and not df_all.empty:
                 showlegend=False
             ), row=3, col=1)
 
-        # Discrete points with exact color per timestamp
         fig.add_trace(go.Scatter(
             x=df_plot_lines["timestamp"],
             y=df_plot_lines["temperatura_c"],
@@ -797,7 +793,6 @@ if df_all is not None and not df_all.empty:
             row=r, col=1
         )
 
-    # Center the wind speed and gusts title horizontally at the top
     fig.add_annotation(
         xref="paper", yref="paper",
         x=0.5, y=1.07,
