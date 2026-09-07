@@ -214,7 +214,6 @@ if df_all is not None and not df_all.empty:
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 24
 
-    # Render selectbox first so st.session_state.window_span_hours is updated immediately for the buttons below
     ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns([1, 1, 1.3, 1, 1, 1])
     
     with ctrl_col3:
@@ -332,7 +331,8 @@ if df_all is not None and not df_all.empty:
     df_plot_lines = df_slice.sort_values("timestamp").reset_index(drop=True)
 
     max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
-    top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
+    # Added extra headroom (1.18 multiplier) so top labels don't get clipped
+    top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.18)
 
     # Dynamic Labels & Arrow Vectors
     speed_labels = [""] * len(df_plot_lines)
@@ -810,7 +810,7 @@ if df_all is not None and not df_all.empty:
         dragmode=False,
         hovermode="x unified",
         showlegend=False,
-        margin=dict(l=35, r=20, t=65, b=30)
+        margin=dict(l=35, r=20, t=80, b=30)  # Increased top margin to t=80 for extra title/label headroom
     )
 
     st.plotly_chart(
