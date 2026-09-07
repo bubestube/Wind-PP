@@ -232,27 +232,6 @@ with header_right:
         </script>
     """, height=50)
 
-# --- Native JS Orientation Detection ---
-components.html("""
-    <script>
-      function updateOrientation() {
-        const isPortrait = window.innerHeight > window.innerWidth;
-        const urlParams = new URLSearchParams(window.parent.location.search);
-        const currentVal = urlParams.get('portrait');
-        const expected = isPortrait ? '1' : '0';
-        if (currentVal !== expected) {
-          urlParams.set('portrait', expected);
-          window.parent.history.replaceState({}, '', `${window.parent.location.pathname}?${urlParams.toString()}`);
-          window.parent.location.reload();
-        }
-      }
-      window.addEventListener('resize', updateOrientation);
-      updateOrientation();
-    </script>
-""", height=0)
-
-is_portrait = st.query_params.get("portrait", "0") == "1"
-
 @st.cache_data(ttl=60, show_spinner=False)
 def load_all_records(csv_path):
     if not os.path.exists(csv_path):
@@ -280,6 +259,7 @@ if df_all is not None and not df_all.empty:
     gust_bg, gust_fg = get_wg_badge(latest['raffica_knots'])
     temp_val = latest.get("temperatura_c")
 
+    # Mobile-friendly 3 + 2 KPI Grid
     kpi_row1 = st.columns(3)
     with kpi_row1[0]:
         st.markdown(f"""<div class="wg-card">
@@ -324,6 +304,7 @@ if df_all is not None and not df_all.empty:
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 12
 
+    # Width selector
     st.session_state.window_span_hours = st.selectbox(
         "Window Width:",
         options=[6, 12, 24, 72, 168, 720],
@@ -331,6 +312,7 @@ if df_all is not None and not df_all.empty:
         format_func=lambda h: f"{h}h" if h < 24 else f"{h//24}d"
     )
 
+    # Horizontal navigation button bar
     btn_cols = st.columns(5)
     with btn_cols[0]:
         st.markdown('<div class="mobile-nav-btn"></div>', unsafe_allow_html=True)
@@ -374,36 +356,22 @@ if df_all is not None and not df_all.empty:
     min_slider = (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime()
     max_slider = t_global_max.to_pydatetime()
 
-    # Dynamic resampling and tick spacing: 30min for 24h view in portrait mode
-    if is_portrait:
-        if span_h >= 720:
-            slider_freq = "24h"
-            resample_rule = "24h"
-        elif span_h >= 168:
-            slider_freq = "12h"
-            resample_rule = "12h"
-        elif span_h >= 72:
-            slider_freq = "6h"
-            resample_rule = "6h"
-        elif span_h >= 24:
-            slider_freq = "30min"
-            resample_rule = "30min"
-        else:
-            slider_freq = "30min"
-            resample_rule = "30min"
+    # Enforce 30-minute sampling rule for 24h view and above
+    if span_h >= 720:
+        slider_freq = "12h"
+        resample_rule = "12h"
+    elif span_h >= 168:
+        slider_freq = "6h"
+        resample_rule = "6h"
+    elif span_h >= 72:
+        slider_freq = "2h"
+        resample_rule = "2h"
+    elif span_h >= 24:
+        slider_freq = "30min"
+        resample_rule = "30min"
     else:
-        if span_h >= 720:
-            slider_freq = "3h"
-            resample_rule = "3h"
-        elif span_h >= 168:
-            slider_freq = "1h"
-            resample_rule = "1h"
-        elif span_h >= 72:
-            slider_freq = "30min"
-            resample_rule = "30min"
-        else:
-            slider_freq = "15min"
-            resample_rule = None
+        slider_freq = "15min"
+        resample_rule = None
 
     v_end = min(pd.to_datetime(st.session_state.window_end_time), t_global_max)
     v_start = v_end - pd.Timedelta(hours=span_h)
@@ -494,15 +462,15 @@ if df_all is not None and not df_all.empty:
         t_arr = df_plot_lines["timestamp"].to_numpy()
 
         if span_h >= 720:
-            min_pts_step, max_pts_step, delta_threshold = (40, 120, 6.0) if is_portrait else (16, 45, 6.0)
+            min_pts_step, max_pts_step, delta_threshold = 12, 36, 5.0
         elif span_h >= 168:
-            min_pts_step, max_pts_step, delta_threshold = (30, 80, 4.5) if is_portrait else (12, 32, 4.5)
+            min_pts_step, max_pts_step, delta_threshold = 8, 24, 4.0
         elif span_h >= 72:
-            min_pts_step, max_pts_step, delta_threshold = (20, 60, 3.5) if is_portrait else (8, 22, 3.5)
+            min_pts_step, max_pts_step, delta_threshold = 6, 18, 3.0
         elif span_h >= 24:
-            min_pts_step, max_pts_step, delta_threshold = (6, 18, 2.0) if is_portrait else (3, 10, 1.5)
+            min_pts_step, max_pts_step, delta_threshold = 4, 12, 2.0
         else:
-            min_pts_step, max_pts_step, delta_threshold = (4, 12, 1.5) if is_portrait else (3, 10, 1.5)
+            min_pts_step, max_pts_step, delta_threshold = 2, 8, 1.0
 
         for idx in valid_indices[1:]:
             curr_v, curr_d, curr_g = v_arr[idx], d_arr[idx], r_arr[idx]
@@ -696,12 +664,7 @@ if df_all is not None and not df_all.empty:
     df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
-    target_arrow_count = (
-        (4 if is_portrait else 8) if span_h >= 720 else
-        ((5 if is_portrait else 10) if span_h >= 168 else
-         ((6 if is_portrait else 12) if span_h >= 72 else
-          ((8 if is_portrait else 16) if span_h >= 24 else 18)))
-    )
+    target_arrow_count = 8 if span_h >= 720 else (10 if span_h >= 168 else (12 if span_h >= 72 else 14))
     steady_step = max(4, len(df_for_arrows) // target_arrow_count)
     selected_indices = []
     if not df_for_arrows.empty:
@@ -889,10 +852,10 @@ if df_all is not None and not df_all.empty:
         dtick_val = 6 * 3600 * 1000
         tick_format_str = "%H:%M<br>%a"
     elif span_h >= 24:
-        dtick_val = 6 * 3600 * 1000 if is_portrait else 3 * 3600 * 1000
+        dtick_val = 3 * 3600 * 1000
         tick_format_str = "%H:%M"
     else:
-        dtick_val = 2 * 3600 * 1000 if is_portrait else 1 * 3600 * 1000
+        dtick_val = 1 * 3600 * 1000
         tick_format_str = "%H:%M"
 
     fig.update_xaxes(
