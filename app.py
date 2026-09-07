@@ -138,14 +138,6 @@ st.markdown("""
         font-size: 0.82rem !important;
     }
 
-    /* Force solid opaque text for toggle labels so they never fade/grey out */
-    div[data-testid="stToggle"] label p {
-        color: #0f172a !important;
-        font-weight: 600 !important;
-        font-size: 0.80rem !important;
-        opacity: 1 !important;
-    }
-
     .slider-month-pill {
         display: inline-flex;
         align-items: center;
@@ -253,8 +245,10 @@ if df_all is not None and not df_all.empty:
         st.session_state.window_end_time = t_global_max.to_pydatetime()
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 12
+    if "is_portrait_mode" not in st.session_state:
+        st.session_state.is_portrait_mode = True
 
-    # Controls row: Width selector & clean toggle
+    # Controls row: Width selector & Color-changing Portrait button toggle
     ctrl_col1, ctrl_col2 = st.columns([1.6, 1.4])
     with ctrl_col1:
         st.session_state.window_span_hours = st.selectbox(
@@ -264,8 +258,29 @@ if df_all is not None and not df_all.empty:
             format_func=lambda h: f"{h}h" if h < 24 else f"{h//24}d"
         )
     with ctrl_col2:
-        st.write("") # vertical alignment spacing matching selectbox label
-        is_portrait_mode = st.toggle("📱 Portrait Mode", value=True)
+        st.markdown('<div style="font-size:0.75rem; font-weight:600; color:#475569; margin-bottom:2px;">Layout Mode:</div>', unsafe_allow_html=True)
+        
+        # Dynamic button color styling (Green when active, Red when inactive)
+        btn_bg = "#16a34a" if st.session_state.is_portrait_mode else "#dc2626"
+        st.markdown(f"""
+            <style>
+            div.stButton > button.portrait-toggle-btn {{
+                background-color: {btn_bg} !important;
+                color: #ffffff !important;
+                border: none !important;
+            }}
+            div.stButton > button.portrait-toggle-btn:hover {{
+                opacity: 0.9 !important;
+                color: #ffffff !important;
+            }}
+            </style>
+        """, unsafe_allow_html=True)
+
+        if st.button("📱 Portrait Mode" if st.session_state.is_portrait_mode else "💻 Landscape Mode", key="portrait_btn", help="Click to toggle layout"):
+            st.session_state.is_portrait_mode = not st.session_state.is_portrait_mode
+            st.rerun()
+
+    is_portrait_mode = st.session_state.is_portrait_mode
 
     # Horizontal navigation button bar
     btn_cols = st.columns(5)
