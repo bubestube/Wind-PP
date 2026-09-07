@@ -72,12 +72,12 @@ def get_wg_badge(val):
 
 st.markdown("""
     <style>
-    /* Maximize canvas on mobile */
+    /* Maximize canvas and flush left on mobile */
     .block-container {
-        padding-top: 0.8rem !important;
+        padding-top: 0.6rem !important;
         padding-bottom: 1.2rem !important;
-        padding-left: 0.4rem !important;
-        padding-right: 0.4rem !important;
+        padding-left: 0.1rem !important;
+        padding-right: 0.1rem !important;
     }
     .stApp {
         background-color: #f8fafc;
@@ -493,9 +493,9 @@ if df_all is not None and not df_all.empty:
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
 
-    subplot_titles_list = ["", "<b>Direction</b>"]
+    subplot_titles_list = ["", ""]
     if has_temp:
-        subplot_titles_list.append("<b>Temp (°C)</b>")
+        subplot_titles_list.append("")
 
     fig = make_subplots(
         rows=3 if has_temp else 2,
@@ -786,7 +786,7 @@ if df_all is not None and not df_all.empty:
 
         fig.update_yaxes(
             title_text="",
-            tickfont=dict(color="#0f172a", size=9),
+            showticklabels=False,
             showline=False,
             gridcolor="#cbd5e1",
             fixedrange=True,
@@ -821,17 +821,11 @@ if df_all is not None and not df_all.empty:
             )
         day_cursor += pd.Timedelta(days=1)
 
-    # Compact Beaufort scale tick labels for mobile widths
-    bft_ticks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-    bft_stretched_vals = [bft_to_stretched(b) for b in bft_ticks]
-    bft_labels_compact = [f"{b} Bft" for b in bft_ticks]
-
+    # Completely remove y-axis tick labels and axis titles to maximize chart width on mobile
     fig.update_yaxes(
         title_text="",
         range=[0, top_y_limit],
-        tickvals=bft_stretched_vals,
-        ticktext=bft_labels_compact,
-        tickfont=dict(color="#0f172a", size=9.5),
+        showticklabels=False,
         showline=False,
         gridcolor="#cbd5e1",
         zerolinecolor="#cbd5e1",
@@ -842,9 +836,7 @@ if df_all is not None and not df_all.empty:
     fig.update_yaxes(
         title_text="",
         range=[-35, 395],
-        tickvals=[0, 90, 180, 270, 360],
-        ticktext=["N", "E", "S", "W", "N"],
-        tickfont=dict(color="#0f172a", size=9.5),
+        showticklabels=False,
         showline=False,
         gridcolor="#cbd5e1",
         fixedrange=True,
@@ -888,6 +880,7 @@ if df_all is not None and not df_all.empty:
             row=r, col=1
         )
 
+    # Tight left margin to make the graph start as far left as possible on mobile screens
     fig.update_layout(
         height=680 if has_temp else 520,
         paper_bgcolor="#ffffff",
@@ -896,7 +889,7 @@ if df_all is not None and not df_all.empty:
         dragmode=False,
         hovermode="x unified",
         showlegend=False,
-        margin=dict(l=22, r=10, t=30, b=15)
+        margin=dict(l=5, r=10, t=30, b=15)
     )
 
     st.plotly_chart(
