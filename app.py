@@ -232,6 +232,28 @@ with header_right:
         </script>
     """, height=50)
 
+# --- Native JS Orientation Detection ---
+# Checks screen dimensions and stores portrait status in query params if changed
+components.html("""
+    <script>
+      function checkOrientation() {
+        const isPortrait = window.innerHeight > window.innerWidth;
+        const urlParams = new URLSearchParams(window.parent.location.search);
+        const currentVal = urlParams.get('portrait');
+        const expected = isPortrait ? '1' : '0';
+        if (currentVal !== expected) {
+          urlParams.set('portrait', expected);
+          window.parent.history.replaceState({}, '', `${window.parent.location.pathname}?${urlParams.toString()}`);
+          window.parent.location.reload();
+        }
+      }
+      window.addEventListener('resize', checkOrientation);
+      checkOrientation();
+    </script>
+""", height=0)
+
+is_portrait = st.query_params.get("portrait", "0") == "1"
+
 @st.cache_data(ttl=60, show_spinner=False)
 def load_all_records(csv_path):
     if not os.path.exists(csv_path):
@@ -259,7 +281,6 @@ if df_all is not None and not df_all.empty:
     gust_bg, gust_fg = get_wg_badge(latest['raffica_knots'])
     temp_val = latest.get("temperatura_c")
 
-    # Mobile-friendly 3 + 2 KPI Grid
     kpi_row1 = st.columns(3)
     with kpi_row1[0]:
         st.markdown(f"""<div class="wg-card">
@@ -304,7 +325,6 @@ if df_all is not None and not df_all.empty:
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 12
 
-    # Width selector
     st.session_state.window_span_hours = st.selectbox(
         "Window Width:",
         options=[6, 12, 24, 72, 168, 720],
@@ -312,7 +332,6 @@ if df_all is not None and not df_all.empty:
         format_func=lambda h: f"{h}h" if h < 24 else f"{h//24}d"
     )
 
-    # Horizontal navigation button bar
     btn_cols = st.columns(5)
     with btn_cols[0]:
         st.markdown('<div class="mobile-nav-btn"></div>', unsafe_allow_html=True)
@@ -356,10 +375,7 @@ if df_all is not None and not df_all.empty:
     min_slider = (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime()
     max_slider = t_global_max.to_pydatetime()
 
-    # Dynamic resampling and tick spacing based on screen width detection via JS evaluation
-    screen_w = streamlit_js_eval(js_expressions="window.innerWidth", key="ClientWidth", want_output=True)
-    is_portrait = screen_w is not None and screen_w < 700
-
+    # Highly reduced data density in portrait mode across all ranges (especially 24h+)
     if is_portrait:
         if span_h >= 720:
             slider_freq = "24h"
@@ -487,7 +503,7 @@ if df_all is not None and not df_all.empty:
         elif span_h >= 24:
             min_pts_step, max_pts_step, delta_threshold = (16, 45, 3.0) if is_portrait else (3, 10, 1.5)
         else:
-            min_pts_step, max_pts_step, delta_threshold = (8, 24, 2.0) if is_portrait else (3, 10, 1.5)
+            min_pts_step, max_pts_step, delta_threshold = (10, 30, 2.0) if is_portrait else (3, 10, 1.5)
 
         for idx in valid_indices[1:]:
             curr_v, curr_d, curr_g = v_arr[idx], d_arr[idx], r_arr[idx]
@@ -683,7 +699,7 @@ if df_all is not None and not df_all.empty:
 
     target_arrow_count = (
         (4 if is_portrait else 8) if span_h >= 720 else
-        ((6 if is_portrait else 10) if span_h >= 168 else
+        ((5 if is_portrait else 10) if span_h >= 168 else
          ((6 if is_portrait else 12) if span_h >= 72 else
           ((6 if is_portrait else 16) if span_h >= 24 else 18)))
     )
@@ -875,9 +891,9 @@ if df_all is not None and not df_all.empty:
         tick_format_str = "%H:%M<br>%a"
     elif span_h >= 24:
         dtick_val = 12 * 3600 * 1000 if is_portrait else 3 * 3600 * 1000
-        tick_format_str = "%H:%M"
+        tick_format_str = "%H:%M<br>%a" if is_portrait else "%H:%M"
     else:
-        dtick_val = 2 * 3600 * 1000 if is_portrait else 1 * 3600 * 1000
+        dtick_val = 4 * 3600 * 1000 if is_portrait else 1 * 3600 * 1000
         tick_format_str = "%H:%M"
 
     fig.update_xaxes(
