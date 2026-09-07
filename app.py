@@ -138,6 +138,14 @@ st.markdown("""
         font-size: 0.82rem !important;
     }
 
+    /* Force solid visibility for toggle labels and text */
+    div[data-testid="stToggle"] label p {
+        color: #0f172a !important;
+        font-weight: 600 !important;
+        font-size: 0.78rem !important;
+        opacity: 1 !important;
+    }
+
     .slider-month-pill {
         display: inline-flex;
         align-items: center;
@@ -246,8 +254,8 @@ if df_all is not None and not df_all.empty:
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 12
 
-    # Controls row: Width selector & Mode Selector dropdown (Portrait vs Landscape)
-    ctrl_col1, ctrl_col2 = st.columns([1.5, 1.5])
+    # Controls row: Width selector & Portrait Mode toggle
+    ctrl_col1, ctrl_col2 = st.columns([1.6, 1.4])
     with ctrl_col1:
         st.session_state.window_span_hours = st.selectbox(
             "Window Width:",
@@ -256,12 +264,8 @@ if df_all is not None and not df_all.empty:
             format_func=lambda h: f"{h}h" if h < 24 else f"{h//24}d"
         )
     with ctrl_col2:
-        mode_choice = st.selectbox(
-            "Layout Mode:",
-            options=["📱 Portrait (30m)", "💻 Landscape (15m)"],
-            index=0
-        )
-        is_portrait_mode = ("Portrait" in mode_choice)
+        st.write("")  # alignment spacing
+        is_portrait_mode = st.toggle("📱 Portrait Mode", value=True)
 
     # Horizontal navigation button bar
     btn_cols = st.columns(5)
