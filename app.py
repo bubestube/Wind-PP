@@ -302,7 +302,7 @@ if df_all is not None and not df_all.empty:
     min_slider = (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime()
     max_slider = t_global_max.to_pydatetime()
 
-    # Apply 30-minute resampling when Portrait Mode toggle is active
+    # 30-min sampling for portrait mode at 24h, 15-min for landscape mode
     if is_portrait_mode:
         if span_h >= 720:
             slider_freq = "12h"
@@ -329,6 +329,9 @@ if df_all is not None and not df_all.empty:
         elif span_h >= 72:
             slider_freq = "30min"
             resample_rule = "30min"
+        elif span_h >= 24:
+            slider_freq = "15min"
+            resample_rule = None
         else:
             slider_freq = "15min"
             resample_rule = None
@@ -764,7 +767,7 @@ if df_all is not None and not df_all.empty:
                 yref="y1",
                 text=f"<b>{midnight.strftime('%a %d')}</b>",
                 showarrow=False,
-    font=dict(size=9, color="#334155"),
+                font=dict(size=9, color="#334155"),
                 bgcolor="rgba(255, 255, 255, 0.85)",
                 bordercolor="#cbd5e1",
                 borderwidth=1,
