@@ -492,7 +492,7 @@ if df_all is not None and not df_all.empty:
         rows=3 if has_temp else 2,
         cols=1,
         shared_xaxes=False,
-        vertical_spacing=0.055,
+        vertical_spacing=0.075,
         subplot_titles=tuple(subplot_titles_list),
         row_heights=[0.64, 0.20, 0.16] if has_temp else [0.74, 0.26]
     )
