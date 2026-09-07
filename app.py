@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 CSV_FILE = "porto_pollo_wind_history.csv"
-BFT_EXP = 1.55
+BFT_EXP = 1.85  # Stretched Beaufort scale exponent for better speed/gust separation
 
 # --- Vectorized Calculations ---
 def knots_to_bft(knots):
