@@ -397,13 +397,14 @@ if df_all is not None and not df_all.empty:
     if has_temp:
         subplot_titles_list.append("<b>Temperature (°C)</b>")
 
+    # Vertical spacing updated to 0.075 as requested, with proportional row heights
     fig = make_subplots(
         rows=3 if has_temp else 2,
         cols=1,
         shared_xaxes=False,
-        vertical_spacing=0.038,
+        vertical_spacing=0.075,
         subplot_titles=tuple(subplot_titles_list),
-        row_heights=[0.54, 0.28, 0.18] if has_temp else [0.65, 0.35]
+        row_heights=[0.58, 0.24, 0.18] if has_temp else [0.68, 0.32]
     )
 
     # --- TRUE CONTINUOUS 2D HORIZONTAL GRADIENT SURFACE ---
@@ -807,7 +808,7 @@ if df_all is not None and not df_all.empty:
     )
 
     fig.update_layout(
-        height=780 if has_temp else 600,
+        height=820 if has_temp else 640,
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
         font=dict(color="#1e293b", family="Arial, sans-serif"),
