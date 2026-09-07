@@ -107,16 +107,6 @@ st.markdown("""
         font-family: monospace;
     }
 
-    /* Framed container for the toggle element */
-    .toggle-frame {
-        background: #ffffff;
-        border: 1px solid #cbd5e1;
-        border-radius: 8px;
-        padding: 4px 10px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
-        margin-top: 2px;
-    }
-
     div.stButton > button {
         background-color: #ffffff !important;
         color: #0f172a !important;
@@ -148,11 +138,11 @@ st.markdown("""
         font-size: 0.82rem !important;
     }
 
-    /* Force absolute solid visibility for toggle labels */
+    /* Force solid opaque text for toggle labels so they never fade/grey out */
     div[data-testid="stToggle"] label p {
         color: #0f172a !important;
         font-weight: 600 !important;
-        font-size: 0.78rem !important;
+        font-size: 0.80rem !important;
         opacity: 1 !important;
     }
 
@@ -264,7 +254,7 @@ if df_all is not None and not df_all.empty:
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 12
 
-    # Controls row: Width selector & Framed Portrait Mode toggle
+    # Controls row: Width selector & clean toggle
     ctrl_col1, ctrl_col2 = st.columns([1.6, 1.4])
     with ctrl_col1:
         st.session_state.window_span_hours = st.selectbox(
@@ -274,10 +264,8 @@ if df_all is not None and not df_all.empty:
             format_func=lambda h: f"{h}h" if h < 24 else f"{h//24}d"
         )
     with ctrl_col2:
-        st.markdown('<div style="font-size:0.75rem; font-weight:600; color:#475569; margin-bottom:2px;">Layout Mode:</div>', unsafe_allow_html=True)
-        st.markdown('<div class="toggle-frame">', unsafe_allow_html=True)
+        st.write("") # vertical alignment spacing matching selectbox label
         is_portrait_mode = st.toggle("📱 Portrait Mode", value=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
     # Horizontal navigation button bar
     btn_cols = st.columns(5)
