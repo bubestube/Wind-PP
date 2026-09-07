@@ -233,7 +233,6 @@ with header_right:
     """, height=50)
 
 # --- Orientation Detection Component ---
-# Injects a tiny script to detect portrait vs landscape and pass it back via query params
 orientation_component = components.html("""
     <script>
       function updateOrientation() {
@@ -380,7 +379,7 @@ if df_all is not None and not df_all.empty:
     min_slider = (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime()
     max_slider = t_global_max.to_pydatetime()
 
-    # Dynamic data reduction for portrait vs landscape views >= 24h
+    # Dynamic data reduction for portrait vs landscape views (starting from span_h >= 24)
     if is_portrait:
         if span_h >= 720:
             slider_freq = "12h"
@@ -505,6 +504,8 @@ if df_all is not None and not df_all.empty:
             min_pts_step, max_pts_step, delta_threshold = (20, 60, 4.5) if is_portrait else (12, 32, 4.5)
         elif span_h >= 72:
             min_pts_step, max_pts_step, delta_threshold = (14, 40, 3.5) if is_portrait else (8, 22, 3.5)
+        elif span_h >= 24:
+            min_pts_step, max_pts_step, delta_threshold = (8, 24, 2.5) if is_portrait else (3, 10, 1.5)
         else:
             min_pts_step, max_pts_step, delta_threshold = 3, 10, 1.5
 
@@ -700,7 +701,12 @@ if df_all is not None and not df_all.empty:
     df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
-    target_arrow_count = 8 if span_h >= 720 else (10 if span_h >= 168 else (12 if span_h >= 72 else 18))
+    target_arrow_count = (
+        (6 if is_portrait else 8) if span_h >= 720 else
+        ((8 if is_portrait else 10) if span_h >= 168 else
+         ((10 if is_portrait else 12) if span_h >= 72 else
+          ((12 if is_portrait else 16) if span_h >= 24 else 18)))
+    )
     steady_step = max(4, len(df_for_arrows) // target_arrow_count)
     selected_indices = []
     if not df_for_arrows.empty:
