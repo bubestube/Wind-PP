@@ -579,22 +579,18 @@ if df_all is not None and not df_all.empty:
     gust_w = 1.1 if span_h > 24 else 1.4
     marker_sz = 2.0 if span_h > 24 else 3.0
 
-    # Increased font sizes for speed/gust labels in portrait mode
-    speed_font_sz = 11.0 if (is_portrait_mode and span_h <= 24) else (9.5 if is_portrait_mode else (8.5 if span_h > 24 else 9.0))
-    gust_font_sz = 10.5 if (is_portrait_mode and span_h <= 24) else (9.0 if is_portrait_mode else (8.5 if span_h > 24 else 9.0))
-
     fig.add_trace(go.Scatter(
         x=df_plot_lines["timestamp"],
         y=df_plot_lines["raffica_plot_y"],
         text=df_plot_lines["gust_label"],
         textposition="top center",
-        textfont=dict(family="Arial, sans-serif", size=gust_font_sz, color="#b91c1c"),
+        textfont=dict(family="Arial, sans-serif", size=8.5 if span_h > 24 else 9.0, color="#b91c1c"),
         customdata=np.stack((df_plot_lines["raffica_bft"], df_plot_lines["raffica_knots"]), axis=-1),
         mode="lines+markers+text",
         name="Gust",
         connectgaps=True,
         line=dict(color="#0f172a", width=gust_w, dash="dot"),
-        marker=dict(symbol="circle", size=marker_sz + (2.0 if is_portrait_mode else 0), color="#0f172a"),
+        marker=dict(symbol="circle", size=marker_sz, color="#0f172a"),
         hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=1, col=1)
 
@@ -603,17 +599,17 @@ if df_all is not None and not df_all.empty:
         y=df_plot_lines["velocita_plot_y"],
         text=df_plot_lines["speed_label"],
         textposition="bottom center",
-        textfont=dict(family="Arial, sans-serif", size=speed_font_sz, color="#0f172a"),
+        textfont=dict(family="Arial, sans-serif", size=8.5 if span_h > 24 else 9.0, color="#0f172a"),
         customdata=np.stack((df_plot_lines["velocita_bft"], df_plot_lines["velocita_knots"], df_plot_lines["direzione_deg"]), axis=-1),
         mode="lines+markers+text",
         name="Speed",
         connectgaps=True,
         line=dict(color="#0f172a", width=line_w),
-        marker=dict(size=marker_sz + (2.0 if is_portrait_mode else 0), color="#0f172a"),
+        marker=dict(size=marker_sz, color="#0f172a"),
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
-    mini_arrow_len = 20 if (is_portrait_mode and span_h <= 24) else (16 if is_portrait_mode else (14 if span_h > 24 else 16))
+    mini_arrow_len = 14 if span_h > 24 else 16
     for pt in labeled_speed_points:
         deg = pt["direzione_deg"]
         if pd.isna(deg) or pd.isna(pt["velocita_plot_y"]):
@@ -628,17 +624,17 @@ if df_all is not None and not df_all.empty:
             y=pt["velocita_plot_y"],
             xref="x1",
             yref="y1",
-            yshift=-22 if is_portrait_mode else (-18 if span_h > 24 else -20),
+            yshift=-18 if span_h > 24 else -20,
             ax=-dx,
             ay=dy,
             axref="pixel",
             ayref="pixel",
             showarrow=True,
             arrowhead=2,
-            arrowsize=1.4 if is_portrait_mode else (1.1 if span_h > 24 else 1.2),
-            arrowwidth=1.4 if is_portrait_mode else (1.1 if span_h > 24 else 1.2),
+            arrowsize=1.1 if span_h > 24 else 1.2,
+            arrowwidth=1.1 if span_h > 24 else 1.2,
             arrowcolor="#0f172a",
-            opacity=0.95
+            opacity=0.9
         )
 
     fig.add_trace(go.Scatter(
@@ -647,7 +643,7 @@ if df_all is not None and not df_all.empty:
         mode="markers",
         name="Dir",
         connectgaps=False,
-        marker=dict(symbol="circle", size=3.5 if is_portrait_mode else (2.0 if span_h > 24 else 2.5), color="#64748b"),
+        marker=dict(symbol="circle", size=2.0 if span_h > 24 else 2.5, color="#64748b"),
         customdata=df_plot_lines[["direzione_cardinal", "velocita_knots", "velocita_bft"]],
         hovertemplate="<b>Dir:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft<extra></extra>"
     ), row=2, col=1)
@@ -655,7 +651,7 @@ if df_all is not None and not df_all.empty:
     df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
-    target_arrow_count = (6 if is_portrait_mode else 8) if span_h >= 720 else ((8 if is_portrait_mode else 10) if span_h >= 168 else ((10 if is_portrait_mode else 12) if span_h >= 72 else (12 if is_portrait_mode else 16)))
+    target_arrow_count = 8 if span_h >= 720 else (10 if span_h >= 168 else (12 if span_h >= 72 else 16))
     steady_step = max(4, len(df_for_arrows) // target_arrow_count)
     selected_indices = []
     if not df_for_arrows.empty:
@@ -677,9 +673,7 @@ if df_all is not None and not df_all.empty:
                 last_deg = curr_deg
 
     df_sub = df_for_arrows.iloc[selected_indices]
-    
-    # Increased wind direction arrow lengths in portrait mode for maximum clarity
-    arrow_length_px = 34 if (is_portrait_mode and span_h <= 24) else (28 if is_portrait_mode else (24 if span_h > 24 else 28))
+    arrow_length_px = 24 if span_h > 24 else 28
 
     for _, row_data in df_sub.iterrows():
         angle_deg = row_data["arrow_angle"]
@@ -704,10 +698,10 @@ if df_all is not None and not df_all.empty:
             ayref="pixel",
             showarrow=True,
             arrowhead=2,
-            arrowsize=1.8 if is_portrait_mode else (1.4 if span_h > 24 else 1.6),
-            arrowwidth=1.5 if is_portrait_mode else (1.1 if span_h > 24 else 1.3),
+            arrowsize=1.4 if span_h > 24 else 1.6,
+            arrowwidth=1.1 if span_h > 24 else 1.3,
             arrowcolor=arrow_color,
-            opacity=0.95
+            opacity=0.9
         )
 
     if has_temp:
