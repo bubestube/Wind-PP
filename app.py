@@ -6,7 +6,6 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
-import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title="Porto Pollo – Windguru Live Station",
@@ -173,85 +172,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-header_left, header_right = st.columns([3, 1])
-with header_left:
-    st.title("🪁 Porto Pollo Live")
-with header_right:
-    components.html("""
-        <style>
-          #fsBtn {
-            width: 100%;
-            height: 34px;
-            margin-top: 14px;
-            background-color: #ffffff;
-            color: #0f172a;
-            border: 1px solid #cbd5e1;
-            border-radius: 6px;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            font-weight: 600;
-            font-size: 0.80rem;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 4px;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-            transition: background-color 0.15s ease, border-color 0.15s ease;
-          }
-          #fsBtn:hover {
-            background-color: #f8fafc;
-            border-color: #94a3b8;
-            color: #0284c7;
-          }
-        </style>
-        <button id="fsBtn"><span>⛶</span> Fullscreen</button>
-        <script>
-          const btn = document.getElementById('fsBtn');
-          btn.addEventListener('click', function () {
-            const rootDoc = window.parent.document;
-            const targetEl = rootDoc.documentElement;
-            const isFs = rootDoc.fullscreenElement || 
-                         rootDoc.webkitFullscreenElement || 
-                         rootDoc.mozFullScreenElement || 
-                         rootDoc.msFullscreenElement;
-
-            if (!isFs) {
-              if (targetEl.requestFullscreen) { targetEl.requestFullscreen(); }
-              else if (targetEl.webkitRequestFullscreen) { targetEl.webkitRequestFullscreen(); }
-              else if (targetEl.mozRequestFullScreen) { targetEl.mozRequestFullScreen(); }
-              else if (targetEl.msRequestFullscreen) { targetEl.msRequestFullscreen(); }
-              btn.innerHTML = '<span>✕</span> Exit';
-            } else {
-              if (rootDoc.exitFullscreen) { rootDoc.exitFullscreen(); }
-              else if (rootDoc.webkitExitFullscreen) { rootDoc.webkitExitFullscreen(); }
-              else if (rootDoc.mozCancelFullScreen) { rootDoc.mozCancelFullScreen(); }
-              else if (rootDoc.msExitFullscreen) { rootDoc.msExitFullscreen(); }
-              btn.innerHTML = '<span>⛶</span> Fullscreen';
-            }
-          });
-        </script>
-    """, height=50)
-
-# --- Native JS Orientation Detection ---
-components.html("""
-    <script>
-      function updateOrientation() {
-        const isPortrait = window.innerHeight > window.innerWidth;
-        const urlParams = new URLSearchParams(window.parent.location.search);
-        const currentVal = urlParams.get('portrait');
-        const expected = isPortrait ? '1' : '0';
-        if (currentVal !== expected) {
-          urlParams.set('portrait', expected);
-          window.parent.history.replaceState({}, '', `${window.parent.location.pathname}?${urlParams.toString()}`);
-          window.parent.location.reload();
-        }
-      }
-      window.addEventListener('resize', updateOrientation);
-      updateOrientation();
-    </script>
-""", height=0)
-
-is_portrait = st.query_params.get("portrait", "0") == "1"
+st.title("🪁 Porto Pollo Live")
 
 @st.cache_data(ttl=60, show_spinner=False)
 def load_all_records(csv_path):
@@ -325,13 +246,17 @@ if df_all is not None and not df_all.empty:
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 12
 
-    # Width selector
-    st.session_state.window_span_hours = st.selectbox(
-        "Window Width:",
-        options=[6, 12, 24, 72, 168, 720],
-        index=1,
-        format_func=lambda h: f"{h}h" if h < 24 else f"{h//24}d"
-    )
+    # Controls row: Width selector & Portrait Mode toggle
+    ctrl_col1, ctrl_col2 = st.columns([2, 1])
+    with ctrl_col1:
+        st.session_state.window_span_hours = st.selectbox(
+            "Window Width:",
+            options=[6, 12, 24, 72, 168, 720],
+            index=1,
+            format_func=lambda h: f"{h}h" if h < 24 else f"{h//24}d"
+        )
+    with ctrl_col2:
+        is_portrait_mode = st.toggle("Portrait Mode", value=True)
 
     # Horizontal navigation button bar
     btn_cols = st.columns(5)
@@ -377,8 +302,8 @@ if df_all is not None and not df_all.empty:
     min_slider = (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime()
     max_slider = t_global_max.to_pydatetime()
 
-    # Explicit 30-min for portrait at 24h, 15-min for landscape at 24h
-    if is_portrait:
+    # Apply 30-minute resampling when Portrait Mode toggle is active
+    if is_portrait_mode:
         if span_h >= 720:
             slider_freq = "12h"
             resample_rule = "12h"
@@ -404,9 +329,6 @@ if df_all is not None and not df_all.empty:
         elif span_h >= 72:
             slider_freq = "30min"
             resample_rule = "30min"
-        elif span_h >= 24:
-            slider_freq = "15min"
-            resample_rule = None  # None preserves raw 10-15 min CSV frequency
         else:
             slider_freq = "15min"
             resample_rule = None
@@ -500,13 +422,13 @@ if df_all is not None and not df_all.empty:
         t_arr = df_plot_lines["timestamp"].to_numpy()
 
         if span_h >= 720:
-            min_pts_step, max_pts_step, delta_threshold = (40, 120, 6.0) if is_portrait else (16, 45, 6.0)
+            min_pts_step, max_pts_step, delta_threshold = (40, 120, 6.0) if is_portrait_mode else (16, 45, 6.0)
         elif span_h >= 168:
-            min_pts_step, max_pts_step, delta_threshold = (30, 80, 4.5) if is_portrait else (12, 32, 4.5)
+            min_pts_step, max_pts_step, delta_threshold = (30, 80, 4.5) if is_portrait_mode else (12, 32, 4.5)
         elif span_h >= 72:
-            min_pts_step, max_pts_step, delta_threshold = (20, 60, 3.5) if is_portrait else (8, 22, 3.5)
+            min_pts_step, max_pts_step, delta_threshold = (20, 60, 3.5) if is_portrait_mode else (8, 22, 3.5)
         elif span_h >= 24:
-            min_pts_step, max_pts_step, delta_threshold = (6, 18, 2.0) if is_portrait else (3, 10, 1.0)
+            min_pts_step, max_pts_step, delta_threshold = (10, 30, 2.5) if is_portrait_mode else (3, 10, 1.5)
         else:
             min_pts_step, max_pts_step, delta_threshold = 2, 8, 1.0
 
@@ -842,7 +764,7 @@ if df_all is not None and not df_all.empty:
                 yref="y1",
                 text=f"<b>{midnight.strftime('%a %d')}</b>",
                 showarrow=False,
-                font=dict(size=9, color="#334155"),
+    font=dict(size=9, color="#334155"),
                 bgcolor="rgba(255, 255, 255, 0.85)",
                 bordercolor="#cbd5e1",
                 borderwidth=1,
@@ -890,10 +812,10 @@ if df_all is not None and not df_all.empty:
         dtick_val = 6 * 3600 * 1000
         tick_format_str = "%H:%M<br>%a"
     elif span_h >= 24:
-        dtick_val = 6 * 3600 * 1000 if is_portrait else 3 * 3600 * 1000
+        dtick_val = 6 * 3600 * 1000 if is_portrait_mode else 3 * 3600 * 1000
         tick_format_str = "%H:%M"
     else:
-        dtick_val = 2 * 3600 * 1000 if is_portrait else 1 * 3600 * 1000
+        dtick_val = 2 * 3600 * 1000 if is_portrait_mode else 1 * 3600 * 1000
         tick_format_str = "%H:%M"
 
     fig.update_xaxes(
