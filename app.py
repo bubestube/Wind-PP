@@ -260,23 +260,24 @@ if df_all is not None and not df_all.empty:
     with ctrl_col2:
         st.markdown('<div style="font-size:0.75rem; font-weight:600; color:#475569; margin-bottom:2px;">Layout Mode:</div>', unsafe_allow_html=True)
         
-        # Dynamic button color styling (Green when active, Red when inactive)
+        # Dynamic button color styling with solid contrasting background and text
         btn_bg = "#16a34a" if st.session_state.is_portrait_mode else "#dc2626"
         st.markdown(f"""
             <style>
-            div.stButton > button.portrait-toggle-btn {{
+            div.stButton > button#modeToggleBtn {{
                 background-color: {btn_bg} !important;
                 color: #ffffff !important;
-                border: none !important;
+                border: 2px solid #ffffff !important;
+                box-shadow: 0 0 0 1px {btn_bg} !important;
             }}
-            div.stButton > button.portrait-toggle-btn:hover {{
-                opacity: 0.9 !important;
+            div.stButton > button#modeToggleBtn:hover {{
+                opacity: 0.95 !important;
                 color: #ffffff !important;
             }}
             </style>
         """, unsafe_allow_html=True)
 
-        if st.button("📱 Portrait Mode" if st.session_state.is_portrait_mode else "💻 Landscape Mode", key="portrait_btn", help="Click to toggle layout"):
+        if st.button("📱 Portrait Mode" if st.session_state.is_portrait_mode else "💻 Landscape Mode", key="modeToggleBtn"):
             st.session_state.is_portrait_mode = not st.session_state.is_portrait_mode
             st.rerun()
 
