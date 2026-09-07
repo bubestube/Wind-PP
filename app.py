@@ -42,16 +42,15 @@ def deg_to_cardinal(deg):
     ix = int(round(deg / (360.0 / len(dirs)))) % len(dirs)
     return dirs[ix]
 
-# Continuous Beaufort Color Scale for Horizontal Area Fill
 WIND_COLORSCALE_SMOOTH = [
-    [0.00, "#ffffff"],  # 0 Bft
-    [0.12, "#e0f2fe"],  # 1 Bft
-    [0.25, "#7dd3fc"],  # 2-3 Bft
-    [0.40, "#38bdf8"],  # 4 Bft
-    [0.55, "#4ade80"],  # 5 Bft
-    [0.70, "#facc15"],  # 6 Bft
-    [0.85, "#c084fc"],  # 7 Bft
-    [1.00, "#f87171"]   # 8+ Bft
+    [0.00, "#ffffff"],
+    [0.12, "#e0f2fe"],
+    [0.25, "#7dd3fc"],
+    [0.40, "#38bdf8"],
+    [0.55, "#4ade80"],
+    [0.70, "#facc15"],
+    [0.85, "#c084fc"],
+    [1.00, "#f87171"]
 ]
 
 def get_wg_badge(val):
@@ -72,7 +71,6 @@ def get_wg_badge(val):
 
 st.markdown("""
     <style>
-    /* Maximize canvas on mobile */
     .block-container {
         padding-top: 0.6rem !important;
         padding-bottom: 1.2rem !important;
@@ -84,8 +82,6 @@ st.markdown("""
         color: #1e293b;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
-    
-    /* Responsive compact cards */
     .wg-card {
         background: #ffffff;
         border: 1px solid #e2e8f0;
@@ -155,7 +151,6 @@ st.markdown("""
         box-shadow: 0 1px 2px rgba(0,0,0,0.03);
     }
 
-    /* Force horizontal alignment of buttons on mobile screens */
     div[data-testid="stHorizontalBlock"]:has(.mobile-nav-btn) {
         display: flex !important;
         flex-direction: row !important;
@@ -172,6 +167,23 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
+
+# --- Orientation Detection Script ---
+# This injects a lightweight component that checks window dimensions and stores orientation in query params or session state if needed.
+orientation_js = components.html("""
+    <script>
+      const checkOrientation = () => {
+        const isLandscape = window.innerWidth > window.innerHeight;
+        const orient = isLandscape ? 'landscape' : 'portrait';
+        if (window.parent.document.body.getAttribute('data-orientation') !== orient) {
+          window.parent.document.body.setAttribute('data-orientation', orient);
+          // Optional: trigger streamlt rerun if orientation changes
+        }
+      };
+      window.addEventListener('resize', checkOrientation);
+      checkOrientation();
+    </script>
+""", height=0)
 
 header_left, header_right = st.columns([3, 1])
 with header_left:
@@ -259,7 +271,6 @@ if df_all is not None and not df_all.empty:
     gust_bg, gust_fg = get_wg_badge(latest['raffica_knots'])
     temp_val = latest.get("temperatura_c")
 
-    # Mobile-friendly 3 + 2 KPI Grid
     kpi_row1 = st.columns(3)
     with kpi_row1[0]:
         st.markdown(f"""<div class="wg-card">
@@ -304,7 +315,6 @@ if df_all is not None and not df_all.empty:
     if "window_span_hours" not in st.session_state:
         st.session_state.window_span_hours = 12
 
-    # Width selector
     st.session_state.window_span_hours = st.selectbox(
         "Window Width:",
         options=[6, 12, 24, 72, 168, 720],
@@ -312,7 +322,6 @@ if df_all is not None and not df_all.empty:
         format_func=lambda h: f"{h}h" if h < 24 else f"{h//24}d"
     )
 
-    # Horizontal navigation button bar
     btn_cols = st.columns(5)
     with btn_cols[0]:
         st.markdown('<div class="mobile-nav-btn"></div>', unsafe_allow_html=True)
@@ -356,7 +365,6 @@ if df_all is not None and not df_all.empty:
     min_slider = (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime()
     max_slider = t_global_max.to_pydatetime()
 
-    # Reduced density after 1 day (72h, 168h, 720h)
     if span_h >= 720:
         slider_freq = "3h"
         resample_rule = "3h"
@@ -429,7 +437,6 @@ if df_all is not None and not df_all.empty:
     max_observed_y = df_plot_lines["raffica_plot_y"].dropna().max() if not df_plot_lines["raffica_plot_y"].dropna().empty else bft_to_stretched(7.5)
     top_y_limit = max(bft_to_stretched(7.5), max_observed_y * 1.14)
 
-    # Dynamic Labels & Arrow Vectors with higher sparsity when span > 24h
     speed_labels = [""] * len(df_plot_lines)
     gust_labels = [""] * len(df_plot_lines)
     labeled_speed_points = []
@@ -459,7 +466,6 @@ if df_all is not None and not df_all.empty:
         y_arr = df_plot_lines["velocita_plot_y"].to_numpy()
         t_arr = df_plot_lines["timestamp"].to_numpy()
 
-        # Raised minimum steps and thresholds for multi-day views
         if span_h >= 720:
             min_pts_step, max_pts_step, delta_threshold = 16, 45, 6.0
         elif span_h >= 168:
@@ -493,9 +499,9 @@ if df_all is not None and not df_all.empty:
     df_plot_lines["speed_label"] = speed_labels
     df_plot_lines["gust_label"] = gust_labels
 
-    subplot_titles_list = ["", "<b>Direction</b>"]
+    subplot_titles_list = ["", ""]
     if has_temp:
-        subplot_titles_list.append("<b>Temp (°C)</b>")
+        subplot_titles_list.append("")
 
     fig = make_subplots(
         rows=3 if has_temp else 2,
@@ -506,7 +512,6 @@ if df_all is not None and not df_all.empty:
         row_heights=[0.68, 0.18, 0.14] if has_temp else [0.78, 0.22]
     )
 
-    # --- TRUE CONTINUOUS 2D HORIZONTAL GRADIENT SURFACE ---
     y_levels = np.linspace(0, top_y_limit, 200)
     bft_levels = np.power(y_levels, 1.0 / BFT_EXP)
     z_gradient = np.tile(bft_levels, (2, 1)).T
@@ -523,7 +528,6 @@ if df_all is not None and not df_all.empty:
         hoverinfo="skip"
     ), row=1, col=1)
 
-    # --- INVERTED MASK: BLOCKS OUT EVERYTHING ABOVE GUST LINE ---
     x_mask = [v_start] + list(df_plot_lines["timestamp"]) + [v_end, v_end, v_start]
     y_mask = [df_plot_lines["raffica_plot_y"].iloc[0]] + list(df_plot_lines["raffica_plot_y"]) + [
         df_plot_lines["raffica_plot_y"].iloc[-1], top_y_limit * 1.05, top_y_limit * 1.05
@@ -539,7 +543,6 @@ if df_all is not None and not df_all.empty:
         showlegend=False
     ), row=1, col=1)
 
-    # --- PERFECT RECTANGULAR NIGHT SHADING BOXES ---
     day_cursor = v_start.floor("D")
     while day_cursor <= v_end + pd.Timedelta(days=2):
         night_start = day_cursor + pd.Timedelta(hours=19)
@@ -588,12 +591,10 @@ if df_all is not None and not df_all.empty:
 
         day_cursor += pd.Timedelta(days=1)
 
-    # Dynamic trace sizing based on span
     line_w = 1.3 if span_h > 24 else 2.0
     gust_w = 1.1 if span_h > 24 else 1.4
     marker_sz = 2.0 if span_h > 24 else 3.0
 
-    # Subplot 1: Gust Trace
     fig.add_trace(go.Scatter(
         x=df_plot_lines["timestamp"],
         y=df_plot_lines["raffica_plot_y"],
@@ -609,7 +610,6 @@ if df_all is not None and not df_all.empty:
         hovertemplate="<b>Gust:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<extra></extra>"
     ), row=1, col=1)
 
-    # Subplot 1: Sustained Speed Trace
     fig.add_trace(go.Scatter(
         x=df_plot_lines["timestamp"],
         y=df_plot_lines["velocita_plot_y"],
@@ -625,7 +625,6 @@ if df_all is not None and not df_all.empty:
         hovertemplate="<b>Speed:</b> %{customdata[0]:.1f} Bft (%{customdata[1]:.1f} kts)<br><b>Dir:</b> %{customdata[2]:.0f}°<extra></extra>"
     ), row=1, col=1)
 
-    # Stemmed mini vector arrows
     mini_arrow_len = 14 if span_h > 24 else 16
     for pt in labeled_speed_points:
         deg = pt["direzione_deg"]
@@ -654,7 +653,6 @@ if df_all is not None and not df_all.empty:
             opacity=0.9
         )
 
-    # Subplot 2: Direction Trace
     fig.add_trace(go.Scatter(
         x=df_plot_lines["timestamp"],
         y=df_plot_lines["direzione_deg"],
@@ -666,7 +664,6 @@ if df_all is not None and not df_all.empty:
         hovertemplate="<b>Dir:</b> %{customdata[0]} (%{y:.0f}°)<br><b>Speed:</b> %{customdata[2]:.1f} Bft<extra></extra>"
     ), row=2, col=1)
 
-    # Subplot 2: Direction Arrows (stricter target count on multi-day spans)
     df_for_arrows = df_slice.sort_values("timestamp").reset_index(drop=True)
     df_for_arrows["arrow_angle"] = (df_for_arrows["direzione_deg"].fillna(0) + 180) % 360
 
@@ -723,7 +720,6 @@ if df_all is not None and not df_all.empty:
             opacity=0.9
         )
 
-    # Subplot 3: Temperature (Segmented Lines: Day Yellow, Night 19-06h Dark Blue)
     if has_temp:
         m_size = 2.0 if span_h > 24 else 2.5
         temp_l_width = 1.4 if span_h > 24 else 1.8
@@ -793,7 +789,6 @@ if df_all is not None and not df_all.empty:
             row=3, col=1
         )
 
-    # Midnight dividers & in-graph headers
     day_cursor = v_start.floor("D")
     while day_cursor <= v_end + pd.Timedelta(days=1):
         midnight = day_cursor
@@ -821,7 +816,6 @@ if df_all is not None and not df_all.empty:
             )
         day_cursor += pd.Timedelta(days=1)
 
-    # Compact Beaufort scale tick labels for mobile widths
     bft_ticks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     bft_stretched_vals = [bft_to_stretched(b) for b in bft_ticks]
     bft_labels_compact = [f"{b} Bft" for b in bft_ticks]
