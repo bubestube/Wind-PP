@@ -448,16 +448,17 @@ if df_all is not None and not df_all.empty:
         y_arr = df_plot_lines["velocita_plot_y"].to_numpy()
         t_arr = df_plot_lines["timestamp"].to_numpy()
 
+        # Increased marker frequency: setting step to 2 so every second data point gets a label/arrow
         if span_h >= 720:
-            min_pts_step, max_pts_step, delta_threshold = (40, 120, 6.0) if is_portrait_mode else (16, 45, 6.0)
+            min_pts_step, max_pts_step, delta_threshold = 4, 12, 1.0
         elif span_h >= 168:
-            min_pts_step, max_pts_step, delta_threshold = (30, 80, 4.5) if is_portrait_mode else (12, 32, 4.5)
+            min_pts_step, max_pts_step, delta_threshold = 3, 10, 1.0
         elif span_h >= 72:
-            min_pts_step, max_pts_step, delta_threshold = (20, 60, 3.5) if is_portrait_mode else (8, 22, 3.5)
-        elif span_h >= 24:
-            min_pts_step, max_pts_step, delta_threshold = (10, 30, 2.5) if is_portrait_mode else (3, 10, 1.5)
-        else:
             min_pts_step, max_pts_step, delta_threshold = 2, 8, 1.0
+        elif span_h >= 24:
+            min_pts_step, max_pts_step, delta_threshold = 2, 6, 0.5
+        else:
+            min_pts_step, max_pts_step, delta_threshold = 2, 5, 0.5
 
         for idx in valid_indices[1:]:
             curr_v, curr_d, curr_g = v_arr[idx], d_arr[idx], r_arr[idx]
