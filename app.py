@@ -233,10 +233,9 @@ with header_right:
     """, height=50)
 
 # --- Native JS Orientation Detection ---
-# Checks screen dimensions and stores portrait status in query params if changed
 components.html("""
     <script>
-      function checkOrientation() {
+      function updateOrientation() {
         const isPortrait = window.innerHeight > window.innerWidth;
         const urlParams = new URLSearchParams(window.parent.location.search);
         const currentVal = urlParams.get('portrait');
@@ -247,8 +246,8 @@ components.html("""
           window.parent.location.reload();
         }
       }
-      window.addEventListener('resize', checkOrientation);
-      checkOrientation();
+      window.addEventListener('resize', updateOrientation);
+      updateOrientation();
     </script>
 """, height=0)
 
@@ -375,7 +374,7 @@ if df_all is not None and not df_all.empty:
     min_slider = (t_global_min + pd.Timedelta(hours=span_h)).to_pydatetime()
     max_slider = t_global_max.to_pydatetime()
 
-    # Highly reduced data density in portrait mode across all ranges (especially 24h+)
+    # Dynamic resampling and tick spacing: 30min for 24h view in portrait mode
     if is_portrait:
         if span_h >= 720:
             slider_freq = "24h"
@@ -387,11 +386,11 @@ if df_all is not None and not df_all.empty:
             slider_freq = "6h"
             resample_rule = "6h"
         elif span_h >= 24:
-            slider_freq = "3h"
-            resample_rule = "3h"
+            slider_freq = "30min"
+            resample_rule = "30min"
         else:
-            slider_freq = "1h"
-            resample_rule = "1h"
+            slider_freq = "30min"
+            resample_rule = "30min"
     else:
         if span_h >= 720:
             slider_freq = "3h"
@@ -501,9 +500,9 @@ if df_all is not None and not df_all.empty:
         elif span_h >= 72:
             min_pts_step, max_pts_step, delta_threshold = (20, 60, 3.5) if is_portrait else (8, 22, 3.5)
         elif span_h >= 24:
-            min_pts_step, max_pts_step, delta_threshold = (16, 45, 3.0) if is_portrait else (3, 10, 1.5)
+            min_pts_step, max_pts_step, delta_threshold = (6, 18, 2.0) if is_portrait else (3, 10, 1.5)
         else:
-            min_pts_step, max_pts_step, delta_threshold = (10, 30, 2.0) if is_portrait else (3, 10, 1.5)
+            min_pts_step, max_pts_step, delta_threshold = (4, 12, 1.5) if is_portrait else (3, 10, 1.5)
 
         for idx in valid_indices[1:]:
             curr_v, curr_d, curr_g = v_arr[idx], d_arr[idx], r_arr[idx]
@@ -701,7 +700,7 @@ if df_all is not None and not df_all.empty:
         (4 if is_portrait else 8) if span_h >= 720 else
         ((5 if is_portrait else 10) if span_h >= 168 else
          ((6 if is_portrait else 12) if span_h >= 72 else
-          ((6 if is_portrait else 16) if span_h >= 24 else 18)))
+          ((8 if is_portrait else 16) if span_h >= 24 else 18)))
     )
     steady_step = max(4, len(df_for_arrows) // target_arrow_count)
     selected_indices = []
@@ -890,10 +889,10 @@ if df_all is not None and not df_all.empty:
         dtick_val = 6 * 3600 * 1000
         tick_format_str = "%H:%M<br>%a"
     elif span_h >= 24:
-        dtick_val = 12 * 3600 * 1000 if is_portrait else 3 * 3600 * 1000
-        tick_format_str = "%H:%M<br>%a" if is_portrait else "%H:%M"
+        dtick_val = 6 * 3600 * 1000 if is_portrait else 3 * 3600 * 1000
+        tick_format_str = "%H:%M"
     else:
-        dtick_val = 4 * 3600 * 1000 if is_portrait else 1 * 3600 * 1000
+        dtick_val = 2 * 3600 * 1000 if is_portrait else 1 * 3600 * 1000
         tick_format_str = "%H:%M"
 
     fig.update_xaxes(
